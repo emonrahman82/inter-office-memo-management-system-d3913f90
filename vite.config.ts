@@ -12,4 +12,8 @@ export default defineConfig({
     // nitro/vite builds from this
     server: { entry: "server" },
   },
+  // Target Vercel for external deployment (SSR/serverless output).
+  nitro: {
+    preset: "vercel",
+  },
 });
