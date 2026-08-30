@@ -1,24 +1,36 @@
 import { createFileRoute } from "@tanstack/react-router";
 
-// No head() here: the home route inherits title/description/og/twitter from
-// __root.tsx, and ships no og:image so serve-time hosting can inject the
-// project's social preview (explicit og:image or latest screenshot).
 export const Route = createFileRoute("/")({
+  head: () => ({
+    meta: [
+      { title: "IOMMS - Multi-Tenant Memo Management System" },
+      {
+        name: "description",
+        content:
+          "IOMMS is a multi-tenant inter-office memo management system for organizations, departments, approvals and document workflows.",
+      },
+      { property: "og:title", content: "IOMMS - Memo Management System" },
+      {
+        property: "og:description",
+        content:
+          "Manage inter-office memos, departments and approvals across multiple organizations.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
   component: Index,
 });
 
-// IMPORTANT: Replace this placeholder. See ./README.md for routing conventions.
 function Index() {
   return (
-    <div
-      className="flex min-h-screen items-center justify-center"
-      style={{ backgroundColor: "#fcfbf8" }}
-    >
-      <img
-        data-lovable-blank-page-placeholder="REMOVE_THIS"
-        src="https://cdn.gpteng.co/blank-app-v1.svg"
-        alt="Your app will live here!"
+    <>
+      <h1 className="sr-only">IOMMS - Multi-Tenant Memo Management System</h1>
+      <iframe
+        src="/app/index.html"
+        title="IOMMS Memo Management System"
+        className="fixed inset-0 h-full w-full border-0"
       />
-    </div>
+    </>
   );
 }
