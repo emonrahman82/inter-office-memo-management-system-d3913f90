@@ -1,0 +1,2706 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IOMMS v13.0 - Complete Multi-Tenant Memo Management System</title>
+  
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0f9ff',
+              100: '#e0f2fe',
+              500: '#0284c7',
+              600: '#0369a1',
+              700: '#075985',
+              900: '#0c4a6e',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    .hide-scrollbar::-webkit-scrollbar { display: none; }
+    .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans antialiased min-h-screen flex flex-col">
+
+  <div id="toast-container" class="fixed top-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
+  <div id="modal-container"></div>
+
+  <div id="app" class="flex-1 flex flex-col min-h-screen"></div>
+
+  <script>
+    /* ==========================================================================
+       1. DATA STORE INITIALIZATION
+       ========================================================================== */
+    const INITIAL_DATA = {
+      organizations: [
+        {
+          id: 'org_a',
+          name: 'Apex Solutions Ltd.',
+          code: 'APEX',
+          logo: '🏢',
+          email: 'contact@apexsolutions.local',
+          phone: '+1 (555) 019-2834',
+          address: '742 Evergreen Terrace, Sector 4, Tech City',
+          config: { allowExternalInvites: true, requireTwoFactor: false }
+        },
+        {
+          id: 'org_b',
+          name: 'Nexus Innovations',
+          code: 'NEXUS',
+          logo: '🚀',
+          email: 'hello@nexusinnovate.local',
+          phone: '+1 (555) 082-9911',
+          address: 'Building 9, Innovation Park, Silicon District',
+          config: { allowExternalInvites: false, requireTwoFactor: true }
+        }
+      ],
+      departments: [
+        { id: 'dept_1', org_id: 'org_a', name: 'Executive & Strategy', description: 'C-Suite leadership', status: 'Active' },
+        { id: 'dept_2', org_id: 'org_a', name: 'Finance & Accounts', description: 'Financial planning & treasury', status: 'Active' },
+        { id: 'dept_3', org_id: 'org_a', name: 'Operations & IT', description: 'Technical infra & ops', status: 'Active' },
+        { id: 'dept_4', org_id: 'org_b', name: 'Product Engineering', description: 'Nexus dev division', status: 'Active' }
+      ],
+      categories: [
+        { id: 'cat_1', org_id: 'org_a', name: 'Procurement', description: 'Purchases & capital expenditure', status: 'Active' },
+        { id: 'cat_2', org_id: 'org_a', name: 'Financial', description: 'Budgetary requests', status: 'Active' },
+        { id: 'cat_3', org_id: 'org_a', name: 'Administrative', description: 'Office governance & policy', status: 'Active' },
+        { id: 'cat_4', org_id: 'org_a', name: 'HR & Personnel', description: 'Staff, recruitment & leaves', status: 'Active' },
+        { id: 'cat_5', org_id: 'org_a', name: 'Academic', description: 'Curriculum & research', status: 'Active' },
+        { id: 'cat_6', org_id: 'org_a', name: 'Technical', description: 'Engineering and architecture', status: 'Active' },
+        { id: 'cat_7', org_id: 'org_a', name: 'General', description: 'General notices', status: 'Active' },
+        { id: 'cat_8', org_id: 'org_b', name: 'Engineering', description: 'Technical architecture', status: 'Active' }
+      ],
+      users: [
+        { id: 'u_admin_a', org_id: 'org_a', name: 'Eleanor Vance', email: 'admin@apex.local', password: 'password123', role: 'admin', designation: 'Tenant Administrator', dept_id: 'dept_1', status: 'Active' },
+        { id: 'u_author_a', org_id: 'org_a', name: 'Sarah Jenkins', email: 'author@apex.local', password: 'password123', role: 'user', designation: 'Operations Specialist', dept_id: 'dept_3', status: 'Active' },
+        { id: 'u_manager_a', org_id: 'org_a', name: 'David Chen', email: 'manager@apex.local', password: 'password123', role: 'user', designation: 'Head of Operations', dept_id: 'dept_3', status: 'Active' },
+        { id: 'u_finance_a', org_id: 'org_a', name: 'Marcus Sterling', email: 'finance@apex.local', password: 'password123', role: 'user', designation: 'Finance Director', dept_id: 'dept_2', status: 'Active' },
+        { id: 'u_director_a', org_id: 'org_a', name: 'Victoria Thorne', email: 'director@apex.local', password: 'password123', role: 'user', designation: 'Chief Executive Officer', dept_id: 'dept_1', status: 'Active' },
+        { id: 'u_user_b', org_id: 'org_b', name: 'John Miller (Tenant B)', email: 'john@nexus.local', password: 'password123', role: 'user', designation: 'Lead Engineer', dept_id: 'dept_4', status: 'Active' }
+      ],
+      workflowTemplates: [
+        {
+          id: 'tmpl_1',
+          org_id: 'org_a',
+          name: 'Purchase Request Standard',
+          description: 'Operations -> Finance -> CEO',
+          stepUserIds: ['u_manager_a', 'u_finance_a', 'u_director_a']
+        },
+        {
+          id: 'tmpl_2',
+          org_id: 'org_a',
+          name: 'Leave Request Sequence',
+          description: 'Line Manager sign-off',
+          stepUserIds: ['u_manager_a']
+        }
+      ],
+      delegations: [
+        {
+          id: 'del_1',
+          org_id: 'org_a',
+          delegator_id: 'u_finance_a',
+          delegatee_id: 'u_manager_a',
+          start_date: '2026-08-01',
+          end_date: '2026-09-30',
+          reason: 'Executive Travel Coverage',
+          status: 'Active'
+        }
+      ],
+      memos: [
+        {
+          id: 'memo_101',
+          org_id: 'org_a',
+          ref_number: 'MEMO-2026-001',
+          title: 'Approval for Cloud Server Infrastructure Upgrade',
+          body: '<p>This memorandum seeks formal approval for allocating <strong>$14,500</strong> for regional cluster migrations.</p>',
+          author_id: 'u_author_a',
+          dept_id: 'dept_3',
+          category: 'Procurement',
+          priority: 'Urgent',
+          status: 'Pending Approval',
+          current_step_index: 0,
+          attachments: [
+            { name: 'Architecture_Plan.txt', size: '1.2 KB', dataUrl: 'data:text/plain;base64,Q2xvdWQgSW5mcmFzdHJ1Y3R1cmUgUGxhbiB2MS4w', uploaded_by: 'Sarah Jenkins', date: '2026-08-28 08:45' }
+          ],
+          versions: [
+            { version: 1, body: '<p>This memorandum seeks formal approval for allocating <strong>$14,500</strong> for regional cluster migrations.</p>', editor: 'Sarah Jenkins', timestamp: '2026-08-28 08:45' }
+          ],
+          workflow: [
+            { user_id: 'u_manager_a', role_title: 'Head of Operations', status: 'Pending', comment: '', timestamp: null, acted_by: null },
+            { user_id: 'u_finance_a', role_title: 'Finance Director', status: 'Waiting', comment: '', timestamp: null, acted_by: null },
+            { user_id: 'u_director_a', role_title: 'Chief Executive Officer', status: 'Waiting', comment: '', timestamp: null, acted_by: null }
+          ],
+          timeline: [
+            { user: 'Sarah Jenkins', action: 'Memo Submitted', timestamp: '2026-08-28 08:45', note: 'Dispatched into sequential workflow' }
+          ],
+          discussions: [],
+          created_at: '2026-08-28 08:45',
+          last_activity: '2026-08-28 08:45'
+        }
+      ],
+      auditLogs: [
+        { id: 'aud_1', org_id: 'org_a', user: 'System', event: 'SYSTEM_BOOT', description: 'Tenant APEX initialized', timestamp: '2026-08-28 08:00' }
+      ],
+      notifications: [
+        { id: 'notif_1', org_id: 'org_a', recipient_id: 'u_manager_a', message: 'Memo MEMO-2026-001 requires your approval action.', memo_id: 'memo_101', read: false, timestamp: '2026-08-28 08:45' }
+      ]
+    };
+
+    function getStore() {
+      const data = localStorage.getItem('iomms_v13_data');
+      return data ? JSON.parse(data) : INITIAL_DATA;
+    }
+
+    function saveStore(data) {
+      localStorage.setItem('iomms_v13_data', JSON.stringify(data));
+    }
+
+    if (!localStorage.getItem('iomms_v13_data')) {
+      saveStore(INITIAL_DATA);
+    }
+
+    function logAudit(event, description) {
+      const store = getStore();
+      const user = state.currentUser;
+      if (!user) return;
+      store.auditLogs.unshift({
+        id: 'aud_' + Date.now(),
+        org_id: user.org_id,
+        user: user.name,
+        event,
+        description,
+        timestamp: new Date().toISOString().replace('T', ' ').substring(0, 16)
+      });
+      saveStore(store);
+    }
+
+    function enforceServerPermission(requiredRole) {
+      if (!state.currentUser) throw new Error('401 Unauthorized');
+      if (requiredRole === 'admin' && state.currentUser.role !== 'admin') {
+        showToast('403 Forbidden: Server-side authorization rejected request.', 'error');
+        throw new Error('403 Forbidden');
+      }
+    }
+
+    /* ==========================================================================
+       2. SESSION & STATE
+       ========================================================================== */
+    let state = {
+      currentUser: JSON.parse(sessionStorage.getItem('iomms_v13_auth')) || null,
+      currentView: 'dashboard', // dashboard, inbox, my-memos, drafts, completed, create-memo, memo-details, delegations, profile, admin, reports, audit, notifications
+      adminTab: 'analytics',
+      activeMemoId: null,
+      editingDraftId: null,
+      searchQuery: '',
+      filterStatus: 'All',
+      filterPriority: 'All',
+      filterCategory: 'All',
+      filterDept: 'All',
+      filterStartDate: '',
+      filterEndDate: '',
+      uploadedFilesStaging: []
+    };
+
+    function setCurrentUser(user) {
+      state.currentUser = user;
+      if (user) sessionStorage.setItem('iomms_v13_auth', JSON.stringify(user));
+      else sessionStorage.removeItem('iomms_v13_auth');
+      renderApp();
+    }
+
+    function navigate(view, params = {}) {
+      state.currentView = view;
+      if (params.memoId) state.activeMemoId = params.memoId;
+      if (params.draftId !== undefined) state.editingDraftId = params.draftId;
+      if (params.adminTab) state.adminTab = params.adminTab;
+      state.uploadedFilesStaging = [];
+      closeModal();
+      renderApp();
+      window.scrollTo(0, 0);
+    }
+
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      const bgColors = { success: 'bg-emerald-600', error: 'bg-rose-600', info: 'bg-slate-800' };
+      toast.className = `${bgColors[type] || 'bg-slate-800'} text-white text-xs px-4 py-3 rounded-xl shadow-lg flex items-center gap-2 transform transition-all duration-300 translate-y-2 opacity-0 pointer-events-auto`;
+      toast.innerHTML = `<i data-lucide="${type === 'success' ? 'check-circle' : type === 'error' ? 'alert-circle' : 'info'}" class="w-4 h-4"></i> <span>${message}</span>`;
+      container.appendChild(toast);
+      lucide.createIcons();
+      setTimeout(() => toast.classList.remove('translate-y-2', 'opacity-0'), 10);
+      setTimeout(() => {
+        toast.classList.add('opacity-0');
+        setTimeout(() => toast.remove(), 300);
+      }, 3500);
+    }
+
+    function closeModal() {
+      document.getElementById('modal-container').innerHTML = '';
+    }
+
+    /* ==========================================================================
+       3. RENDER ENGINE & NAVBAR
+       ========================================================================== */
+    function renderApp() {
+      const app = document.getElementById('app');
+      if (!state.currentUser) {
+        app.innerHTML = renderLogin();
+      } else {
+        app.innerHTML = `
+          ${renderNavbar()}
+          <div class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            ${renderCurrentView()}
+          </div>
+          ${renderFooter()}
+        `;
+      }
+      lucide.createIcons();
+    }
+
+    function renderNavbar() {
+      const store = getStore();
+      const user = state.currentUser;
+      const org = store.organizations.find(o => o.id === user.org_id);
+      const unreadCount = store.notifications.filter(n => n.recipient_id === user.id && !n.read && n.org_id === user.org_id).length;
+
+      return `
+        <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+          <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+              <div class="flex items-center gap-6">
+                <div class="flex items-center gap-2.5 cursor-pointer" onclick="navigate('dashboard')">
+                  <div class="w-9 h-9 bg-brand-600 rounded-xl flex items-center justify-center text-white shadow-sm font-bold text-sm">
+                    ${org?.logo || '🏢'}
+                  </div>
+                  <div>
+                    <span class="font-bold text-slate-900 tracking-tight text-sm sm:text-base leading-none block">IOMMS</span>
+                    <span class="text-[10px] font-bold text-brand-600 uppercase tracking-wider">${org?.name || 'Organization'}</span>
+                  </div>
+                </div>
+
+                <nav class="hidden lg:flex items-center gap-1 text-xs font-semibold">
+                  <button onclick="navigate('dashboard')" class="px-2.5 py-1.5 rounded-lg ${state.currentView === 'dashboard' ? 'bg-slate-100 text-brand-600' : 'text-slate-600 hover:text-slate-900'}">Dashboard</button>
+                  <button onclick="navigate('inbox')" class="px-2.5 py-1.5 rounded-lg ${state.currentView === 'inbox' ? 'bg-slate-100 text-brand-600' : 'text-slate-600 hover:text-slate-900'}">Inbox</button>
+                  <button onclick="navigate('my-memos')" class="px-2.5 py-1.5 rounded-lg ${state.currentView === 'my-memos' ? 'bg-slate-100 text-brand-600' : 'text-slate-600 hover:text-slate-900'}">Sent Memos</button>
+                  <button onclick="navigate('drafts')" class="px-2.5 py-1.5 rounded-lg ${state.currentView === 'drafts' ? 'bg-slate-100 text-brand-600' : 'text-slate-600 hover:text-slate-900'}">Drafts</button>
+                  <button onclick="navigate('completed')" class="px-2.5 py-1.5 rounded-lg ${state.currentView === 'completed' ? 'bg-slate-100 text-brand-600' : 'text-slate-600 hover:text-slate-900'}">Archive</button>
+                  <button onclick="navigate('delegations')" class="px-2.5 py-1.5 rounded-lg ${state.currentView === 'delegations' ? 'bg-slate-100 text-brand-600' : 'text-slate-600 hover:text-slate-900'}">Delegations</button>
+                  ${user.role === 'admin' ? `
+                    <button onclick="navigate('admin')" class="px-2.5 py-1.5 rounded-lg ${state.currentView === 'admin' ? 'bg-purple-100 text-purple-700' : 'text-purple-600 hover:text-purple-900'}">Admin Hub</button>
+                    <button onclick="navigate('reports')" class="px-2.5 py-1.5 rounded-lg ${state.currentView === 'reports' ? 'bg-purple-100 text-purple-700' : 'text-purple-600 hover:text-purple-900'}">Reports</button>
+                    <button onclick="navigate('audit')" class="px-2.5 py-1.5 rounded-lg ${state.currentView === 'audit' ? 'bg-purple-100 text-purple-700' : 'text-purple-600 hover:text-purple-900'}">Audit Trail</button>
+                  ` : ''}
+                </nav>
+              </div>
+
+              <div class="flex items-center gap-2">
+                <button onclick="openCreateOrgModal()" class="hidden sm:flex bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold px-3 py-2 rounded-xl items-center gap-1.5">
+                  <i data-lucide="building-2" class="w-4 h-4 text-brand-600"></i>
+                  <span>New Org</span>
+                </button>
+
+                <button onclick="navigate('create-memo')" class="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-3.5 py-2 rounded-xl shadow-sm flex items-center gap-1.5">
+                  <i data-lucide="plus" class="w-4 h-4"></i>
+                  <span>New Memo</span>
+                </button>
+
+                <button onclick="navigate('notifications')" class="relative p-2 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-100">
+                  <i data-lucide="bell" class="w-4 h-4"></i>
+                  ${unreadCount > 0 ? `<span class="absolute top-1 right-1 w-4 h-4 bg-rose-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">${unreadCount}</span>` : ''}
+                </button>
+
+                <div class="flex items-center pl-2 border-l border-slate-200 gap-2">
+                  <div class="text-right hidden sm:block cursor-pointer" onclick="navigate('profile')">
+                    <p class="text-xs font-bold text-slate-800 leading-tight">${user.name}</p>
+                    <p class="text-[10px] text-slate-500">${user.designation}</p>
+                  </div>
+                  <button onclick="logout()" title="Logout" class="p-2 text-slate-400 hover:text-rose-600 rounded-xl hover:bg-rose-50 transition-colors">
+                    <i data-lucide="log-out" class="w-4 h-4"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </header>
+      `;
+    }
+
+    function renderFooter() {
+      return `
+        <footer class="mt-auto border-t border-slate-200 bg-white py-3">
+          <div class="max-w-7xl mx-auto px-4 text-center text-xs text-slate-500 flex flex-col sm:flex-row justify-between items-center gap-2">
+            <span>Inter-Office Memo Management System (Full Specification Compliant)</span>
+            <span class="font-mono text-[11px] text-slate-400">Tenant: ${state.currentUser.org_id.toUpperCase()}</span>
+          </div>
+        </footer>
+      `;
+    }
+
+    function renderCurrentView() {
+      switch (state.currentView) {
+        case 'dashboard': return renderDashboardView();
+        case 'inbox': return renderInboxView();
+        case 'my-memos': return renderMyMemosView();
+        case 'drafts': return renderDraftsView();
+        case 'completed': return renderCompletedView();
+        case 'create-memo': return renderCreateMemoView();
+        case 'memo-details': return renderMemoDetailsView();
+        case 'delegations': return renderDelegationView();
+        case 'profile': return renderProfileView();
+        case 'admin': return renderAdminView();
+        case 'reports': return renderReportsView();
+        case 'audit': return renderAuditView();
+        case 'notifications': return renderNotificationsView();
+        default: return renderDashboardView();
+      }
+    }
+
+    /* ==========================================================================
+       VIEW: LOGIN
+       ========================================================================== */
+    function renderLogin() {
+      const store = getStore();
+      return `
+        <div class="min-h-screen flex items-center justify-center bg-slate-100 p-4">
+          <div class="max-w-md w-full bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
+            <div class="bg-brand-600 p-6 text-white text-center">
+              <div class="w-12 h-12 bg-white/10 rounded-2xl flex items-center justify-center mx-auto mb-2 text-xl font-bold">🏢</div>
+              <h1 class="text-xl font-bold tracking-tight">IOMMS Login</h1>
+              <p class="text-xs text-brand-100 mt-1">Multi-Tenant Workflow & Security System[cite: 5]</p>
+            </div>
+            
+            <div class="p-6 space-y-4">
+              <form onsubmit="handleDirectLogin(event)" class="space-y-3.5">
+                <div>
+                  <label class="block text-xs font-semibold text-slate-700 mb-1">Email Address</label>
+                  <input type="email" id="login-email" required placeholder="user@apex.local" class="w-full text-xs px-3.5 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-brand-500 font-mono" />
+                </div>
+                <div>
+                  <div class="flex justify-between items-center mb-1">
+                    <label class="block text-xs font-semibold text-slate-700">Password</label>
+                    <button type="button" onclick="openForgotPasswordModal()" class="text-[11px] text-brand-600 font-semibold hover:underline">Forgot Password?</button>
+                  </div>
+                  <input type="password" id="login-password" required placeholder="••••••••" class="w-full text-xs px-3.5 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-brand-500" />
+                </div>
+                <button type="submit" class="w-full bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs py-2.5 rounded-xl shadow-sm transition-all">Sign In</button>
+              </form>
+
+              <div class="relative flex py-1 items-center">
+                <div class="flex-grow border-t border-slate-200"></div>
+                <span class="flex-shrink mx-3 text-slate-400 text-[10px] uppercase font-bold tracking-wider">Demo Quick Switch</span>
+                <div class="flex-grow border-t border-slate-200"></div>
+              </div>
+
+              <div class="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                ${store.users.map(u => {
+                  const org = store.organizations.find(o => o.id === u.org_id);
+                  return `
+                    <button onclick="loginAs('${u.id}')" class="w-full text-left p-2.5 rounded-xl border border-slate-200 hover:border-brand-500 hover:bg-brand-50/50 transition-all flex items-center justify-between group">
+                      <div>
+                        <div class="flex items-center gap-1.5">
+                          <span class="font-bold text-xs text-slate-900 group-hover:text-brand-700">${u.name}</span>
+                          <span class="text-[9px] uppercase font-bold px-1.5 py-0.2 rounded bg-slate-100 text-slate-700">${org?.code || 'ORG'}</span>
+                          ${u.role === 'admin' ? '<span class="text-[9px] bg-purple-100 text-purple-800 font-bold px-1 rounded">Admin</span>' : '<span class="text-[9px] bg-blue-50 text-blue-700 font-semibold px-1 rounded">User</span>'}
+                        </div>
+                        <div class="text-[10px] text-slate-500 font-mono">${u.email}</div>
+                      </div>
+                      <i data-lucide="arrow-right" class="w-3.5 h-3.5 text-slate-400 group-hover:text-brand-600 transition-all"></i>
+                    </button>
+                  `;
+                }).join('')}
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function handleDirectLogin(e) {
+      e.preventDefault();
+      const email = document.getElementById('login-email').value.trim();
+      const password = document.getElementById('login-password').value.trim();
+      const store = getStore();
+
+      const user = store.users.find(u => u.email.toLowerCase() === email.toLowerCase());
+      if (!user) return showToast('Invalid email credentials', 'error');
+      if (user.status !== 'Active') return showToast('Account is deactivated. Contact organization admin[cite: 5].', 'error');
+      if (user.password && user.password !== password) return showToast('Incorrect password (default: password123)', 'error');
+
+      setCurrentUser(user);
+      logAudit('USER_LOGIN', `User ${user.name} logged in`);
+      showToast(`Welcome back, ${user.name}!`, 'success');
+    }
+
+    function openForgotPasswordModal() {
+      const modal = document.getElementById('modal-container');
+      modal.innerHTML = `
+        <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div class="bg-white max-w-md w-full rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+            <div class="bg-brand-600 p-5 text-white flex justify-between items-center">
+              <div class="flex items-center gap-2">
+                <i data-lucide="key" class="w-5 h-5"></i>
+                <h3 class="font-bold text-base tracking-tight">Reset Password[cite: 5]</h3>
+              </div>
+              <button onclick="closeModal()" class="text-white/80 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+
+            <form onsubmit="handleResetPassword(event)" class="p-6 space-y-4">
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Registered Email *</label>
+                <input type="email" id="reset-email" required placeholder="user@apex.local" class="w-full text-xs px-3.5 py-2.5 border border-slate-200 rounded-xl outline-none font-mono focus:ring-2 focus:ring-brand-500" />
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">New Password *</label>
+                <input type="password" id="reset-new-password" required placeholder="Enter new password..." class="w-full text-xs px-3.5 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-brand-500" />
+              </div>
+
+              <div class="flex justify-end gap-2 pt-2">
+                <button type="button" onclick="closeModal()" class="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl">Cancel</button>
+                <button type="submit" class="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-5 py-2 rounded-xl shadow-sm">Reset Password</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      `;
+      lucide.createIcons();
+    }
+
+    function handleResetPassword(e) {
+      e.preventDefault();
+      const email = document.getElementById('reset-email').value.trim();
+      const newPassword = document.getElementById('reset-new-password').value.trim();
+      const store = getStore();
+
+      const user = store.users.find(u => u.email.toLowerCase() === email.toLowerCase());
+      if (!user) return showToast('Email not registered in the system', 'error');
+
+      user.password = newPassword;
+      saveStore(store);
+      closeModal();
+      showToast('Password reset successfully! Please sign in.', 'success');
+    }
+
+    /* ==========================================================================
+       VIEW: DASHBOARD (SECTIONS 12 & MULTI-TENANT PROVISIONING BANNER)
+       ========================================================================== */
+    function renderDashboardView() {
+      const store = getStore();
+      const user = state.currentUser;
+      const org = store.organizations.find(o => o.id === user.org_id);
+      const orgMemos = store.memos.filter(m => m.org_id === user.org_id);
+      
+      const activeDelegation = store.delegations.find(d => d.org_id === user.org_id && d.delegatee_id === user.id && d.status === 'Active');
+
+      const pendingMyAction = orgMemos.filter(m => {
+        if (m.status !== 'Pending Approval' && m.status !== 'Submitted') return false;
+        const currentStep = m.workflow[m.current_step_index];
+        if (!currentStep) return false;
+        return currentStep.user_id === user.id || (activeDelegation && currentStep.user_id === activeDelegation.delegator_id);
+      });
+
+      const mySubmissions = orgMemos.filter(m => m.author_id === user.id && m.status !== 'Draft');
+      const myDrafts = orgMemos.filter(m => m.author_id === user.id && m.status === 'Draft');
+      const completedCount = orgMemos.filter(m => m.status === 'Approved' || m.status === 'Rejected').length;
+      const urgentCount = orgMemos.filter(m => m.priority === 'Urgent' && m.status === 'Pending Approval').length;
+
+      return `
+        <div class="space-y-6">
+          <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+            <div>
+              <div class="flex items-center gap-2">
+                <h1 class="text-xl font-bold text-slate-900">Welcome, ${user.name}</h1>
+                <span class="text-[10px] font-bold px-2 py-0.5 rounded ${user.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-brand-50 text-brand-700'} uppercase">${user.role === 'admin' ? 'Org Admin' : 'Regular User'}[cite: 5]</span>
+              </div>
+              <p class="text-xs text-slate-500 mt-1">${user.designation} &bull; ${store.departments.find(d => d.id === user.dept_id)?.name || 'General'} &bull; <strong>${org?.name} (${org?.code})</strong></p>
+              ${activeDelegation ? `
+                <div class="mt-2 text-[11px] bg-amber-50 text-amber-800 px-2.5 py-1 rounded-lg border border-amber-200 inline-flex items-center gap-1.5 font-medium">
+                  <i data-lucide="shield" class="w-3.5 h-3.5 text-amber-600"></i>
+                  Acting as authorized delegate for <strong>${store.users.find(u => u.id === activeDelegation.delegator_id)?.name}</strong>[cite: 5]
+                </div>
+              ` : ''}
+            </div>
+            
+            <div class="flex flex-wrap gap-2 w-full lg:w-auto">
+              <!-- PRIMARY DASHBOARD CREATE ORG & USER BUTTONS -->
+              <button onclick="openCreateOrgModal()" class="bg-brand-50 hover:bg-brand-100 text-brand-700 border border-brand-300 text-xs font-bold px-4 py-2.5 rounded-xl shadow-sm flex items-center gap-2 transition-all">
+                <i data-lucide="building-2" class="w-4 h-4 text-brand-600"></i>
+                <span>+ Create Organization[cite: 5]</span>
+              </button>
+
+              <button onclick="openSignUpUserModal()" class="bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold px-3.5 py-2.5 rounded-xl flex items-center gap-1.5 shadow-sm transition-all">
+                <i data-lucide="user-plus" class="w-4 h-4 text-brand-600"></i>
+                <span>+ Sign Up User[cite: 5]</span>
+              </button>
+
+              <button onclick="navigate('create-memo')" class="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow-sm flex items-center gap-1.5 transition-all">
+                <i data-lucide="plus" class="w-4 h-4"></i>
+                <span>Create Memo[cite: 5]</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+              <span class="text-xs font-semibold text-slate-500">Pending Review</span>
+              <p class="text-2xl font-bold text-amber-600 mt-1">${pendingMyAction.length}</p>
+              <p class="text-[10px] text-slate-400 mt-0.5">Requiring your review action[cite: 5]</p>
+            </div>
+            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+              <span class="text-xs font-semibold text-slate-500">My Sent Memos</span>
+              <p class="text-2xl font-bold text-slate-900 mt-1">${mySubmissions.length}</p>
+              <p class="text-[10px] text-slate-400 mt-0.5">Active submitted workflows[cite: 5]</p>
+            </div>
+            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+              <span class="text-xs font-semibold text-slate-500">Saved Drafts</span>
+              <p class="text-2xl font-bold text-slate-700 mt-1">${myDrafts.length}</p>
+              <p class="text-[10px] text-slate-400 mt-0.5">Unsubmitted local memos[cite: 5]</p>
+            </div>
+            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+              <span class="text-xs font-semibold text-slate-500">Urgent Attention</span>
+              <p class="text-2xl font-bold text-rose-600 mt-1">${urgentCount}</p>
+              <p class="text-[10px] text-slate-400 mt-0.5">Critical priority queue[cite: 5]</p>
+            </div>
+          </div>
+
+          <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div class="px-6 py-4 border-b border-slate-200 flex justify-between items-center">
+              <span class="font-bold text-xs uppercase tracking-wider text-slate-500">Awaiting Immediate Action[cite: 5]</span>
+              <button onclick="navigate('inbox')" class="text-xs text-brand-600 font-semibold hover:underline">Open Inbox &rarr;</button>
+            </div>
+            ${pendingMyAction.length === 0 ? `
+              <div class="p-8 text-center text-slate-400 text-xs">No pending memo actions awaiting you.</div>
+            ` : `
+              <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs">
+                  <thead class="bg-slate-50 text-slate-500 uppercase font-semibold border-b border-slate-200">
+                    <tr>
+                      <th class="px-6 py-3">Memo Ref</th>
+                      <th class="px-6 py-3">Subject</th>
+                      <th class="px-6 py-3">Originator</th>
+                      <th class="px-6 py-3">Priority</th>
+                      <th class="px-6 py-3 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-slate-100">
+                    ${pendingMyAction.map(m => `
+                      <tr class="hover:bg-slate-50 cursor-pointer" onclick="navigate('memo-details', { memoId: '${m.id}' })">
+                        <td class="px-6 py-3.5 font-mono font-bold text-slate-900">${m.ref_number}</td>
+                        <td class="px-6 py-3.5 font-semibold text-slate-800">${m.title}</td>
+                        <td class="px-6 py-3.5 text-slate-500">${store.users.find(u => u.id === m.author_id)?.name}</td>
+                        <td class="px-6 py-3.5">${getPriorityBadge(m.priority)}</td>
+                        <td class="px-6 py-3.5 text-right font-semibold text-brand-600">Review &rarr;</td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+            `}
+          </div>
+        </div>
+      `;
+    }
+
+    /* ==========================================================================
+       VIEW: ACTION INBOX (SECTION 6.1)
+       ========================================================================== */
+    function renderInboxView() {
+      const store = getStore();
+      const user = state.currentUser;
+      const orgMemos = store.memos.filter(m => m.org_id === user.org_id);
+      const activeDelegation = store.delegations.find(d => d.org_id === user.org_id && d.delegatee_id === user.id && d.status === 'Active');
+      
+      const inboxMemos = orgMemos.filter(m => {
+        if (m.status === 'Changes Requested') return m.author_id === user.id;
+        if (m.status !== 'Pending Approval' && m.status !== 'Submitted') return false;
+        const currentStep = m.workflow[m.current_step_index];
+        if (!currentStep) return false;
+        return currentStep.user_id === user.id || (activeDelegation && currentStep.user_id === activeDelegation.delegator_id);
+      });
+
+      return `
+        <div class="space-y-6">
+          <div>
+            <h1 class="text-xl font-bold text-slate-900">Action Inbox[cite: 5]</h1>
+            <p class="text-xs text-slate-500 mt-1">Memos requiring your explicit approval, revision, or review[cite: 5].</p>
+          </div>
+
+          <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            ${inboxMemos.length === 0 ? `
+              <div class="p-12 text-center text-slate-400 text-xs">Inbox Zero. No workflows currently pending your review.</div>
+            ` : `
+              <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs">
+                  <thead class="bg-slate-50 text-slate-500 uppercase font-semibold border-b border-slate-200">
+                    <tr>
+                      <th class="px-6 py-3">Memo #</th>
+                      <th class="px-6 py-3">Subject</th>
+                      <th class="px-6 py-3">Sender</th>
+                      <th class="px-6 py-3">Department</th>
+                      <th class="px-6 py-3">Priority</th>
+                      <th class="px-6 py-3">Status</th>
+                      <th class="px-6 py-3">Required Action</th>
+                      <th class="px-6 py-3 text-right"></th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-slate-100">
+                    ${inboxMemos.map(m => `
+                      <tr class="hover:bg-slate-50 cursor-pointer" onclick="navigate('memo-details', { memoId: '${m.id}' })">
+                        <td class="px-6 py-4 font-mono font-bold text-slate-900">${m.ref_number}</td>
+                        <td class="px-6 py-4 font-semibold text-slate-800">${m.title}</td>
+                        <td class="px-6 py-4 text-slate-600">${store.users.find(u => u.id === m.author_id)?.name}</td>
+                        <td class="px-6 py-4 text-slate-500">${store.departments.find(d => d.id === m.dept_id)?.name || 'General'}</td>
+                        <td class="px-6 py-4">${getPriorityBadge(m.priority)}</td>
+                        <td class="px-6 py-4">${getStatusBadge(m.status)}</td>
+                        <td class="px-6 py-4">
+                          <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-100 text-amber-800">
+                            ${m.status === 'Changes Requested' ? 'Revise Content' : 'Review & Sign-off'}[cite: 5]
+                          </span>
+                        </td>
+                        <td class="px-6 py-4 text-right">
+                          <button class="bg-brand-50 text-brand-600 font-semibold px-3 py-1.5 rounded-lg text-xs">Open Review</button>
+                        </td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+            `}
+          </div>
+        </div>
+      `;
+    }
+
+    /* ==========================================================================
+       VIEW: SENT / MY MEMOS (SECTION 6.2)
+       ========================================================================== */
+    function renderMyMemosView() {
+      const store = getStore();
+      const user = state.currentUser;
+      let memos = store.memos.filter(m => m.org_id === user.org_id && m.author_id === user.id && m.status !== 'Draft');
+
+      if (state.searchQuery.trim()) {
+        const q = state.searchQuery.toLowerCase();
+        memos = memos.filter(m => m.title.toLowerCase().includes(q) || m.ref_number.toLowerCase().includes(q) || m.body.toLowerCase().includes(q));
+      }
+      if (state.filterStatus !== 'All') memos = memos.filter(m => m.status === state.filterStatus);
+      if (state.filterPriority !== 'All') memos = memos.filter(m => m.priority === state.filterPriority);
+
+      return `
+        <div class="space-y-6">
+          <div class="flex justify-between items-center">
+            <div>
+              <h1 class="text-xl font-bold text-slate-900">Sent / My Memos[cite: 5]</h1>
+              <p class="text-xs text-slate-500 mt-1">Memos created and submitted into sequential workflow by your account[cite: 5].</p>
+            </div>
+            <button onclick="navigate('create-memo')" class="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-3.5 py-2 rounded-xl">New Memo[cite: 5]</button>
+          </div>
+
+          <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-3 items-center justify-between">
+            <div class="relative w-full md:w-80">
+              <i data-lucide="search" class="w-4 h-4 absolute left-3 top-2.5 text-slate-400"></i>
+              <input type="text" placeholder="Search my memos..." value="${state.searchQuery}" oninput="updateSearch(this.value)" class="w-full pl-9 pr-3 py-1.5 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-brand-500 outline-none" />
+            </div>
+
+            <div class="flex flex-wrap items-center gap-2 w-full md:w-auto">
+              <select onchange="updateFilterStatus(this.value)" class="border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs text-slate-700 outline-none bg-white">
+                <option value="All">Status: All</option>
+                <option value="Pending Approval">Pending Approval</option>
+                <option value="Approved">Approved</option>
+                <option value="Rejected">Rejected</option>
+                <option value="Changes Requested">Changes Requested</option>
+              </select>
+
+              <select onchange="updateFilterPriority(this.value)" class="border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs text-slate-700 outline-none bg-white">
+                <option value="All">Priority: All</option>
+                <option value="Normal">Normal</option>
+                <option value="High">High</option>
+                <option value="Urgent">Urgent</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs">
+                <thead class="bg-slate-50 text-slate-500 uppercase font-semibold border-b border-slate-200">
+                  <tr>
+                    <th class="px-6 py-3">Memo #</th>
+                    <th class="px-6 py-3">Subject</th>
+                    <th class="px-6 py-3">Current Participant</th>
+                    <th class="px-6 py-3">Priority</th>
+                    <th class="px-6 py-3">Status</th>
+                    <th class="px-6 py-3">Submitted Date</th>
+                    <th class="px-6 py-3">Last Activity</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                  ${memos.length === 0 ? `
+                    <tr><td colspan="7" class="p-8 text-center text-slate-400">No sent memos recorded.</td></tr>
+                  ` : memos.map(m => {
+                    const step = m.workflow[m.current_step_index];
+                    const participant = store.users.find(u => u.id === step?.user_id);
+                    return `
+                      <tr class="hover:bg-slate-50 cursor-pointer" onclick="navigate('memo-details', { memoId: '${m.id}' })">
+                        <td class="px-6 py-3.5 font-mono font-bold text-slate-900">${m.ref_number}</td>
+                        <td class="px-6 py-3.5 font-semibold text-slate-800">${m.title}</td>
+                        <td class="px-6 py-3.5 text-slate-600">${m.status === 'Approved' ? '✅ Completed' : (participant ? `${participant.name} (${participant.designation})` : '—')}[cite: 5]</td>
+                        <td class="px-6 py-3.5">${getPriorityBadge(m.priority)}</td>
+                        <td class="px-6 py-3.5">${getStatusBadge(m.status)}</td>
+                        <td class="px-6 py-3.5 text-slate-400 font-mono">${m.created_at}</td>
+                        <td class="px-6 py-3.5 text-slate-400 font-mono">${m.last_activity || m.created_at}</td>
+                      </tr>
+                    `;
+                  }).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    /* ==========================================================================
+       VIEW: DRAFT MEMOS (SECTION 3.2)
+       ========================================================================== */
+    function renderDraftsView() {
+      const store = getStore();
+      const user = state.currentUser;
+      const drafts = store.memos.filter(m => m.org_id === user.org_id && m.author_id === user.id && m.status === 'Draft');
+
+      return `
+        <div class="space-y-6">
+          <div class="flex justify-between items-center">
+            <div>
+              <h1 class="text-xl font-bold text-slate-900">Saved Drafts[cite: 5]</h1>
+              <p class="text-xs text-slate-500 mt-1">Draft memos not yet submitted into the review workflow[cite: 5].</p>
+            </div>
+            <button onclick="navigate('create-memo')" class="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-4 py-2 rounded-xl">Create Draft[cite: 5]</button>
+          </div>
+
+          <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            ${drafts.length === 0 ? `
+              <div class="p-12 text-center text-slate-400 text-xs">No saved drafts.</div>
+            ` : `
+              <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs">
+                  <thead class="bg-slate-50 text-slate-500 uppercase font-semibold border-b border-slate-200">
+                    <tr>
+                      <th class="px-6 py-3">Draft #</th>
+                      <th class="px-6 py-3">Subject</th>
+                      <th class="px-6 py-3">Category</th>
+                      <th class="px-6 py-3">Priority</th>
+                      <th class="px-6 py-3">Saved Time</th>
+                      <th class="px-6 py-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-slate-100">
+                    ${drafts.map(d => `
+                      <tr>
+                        <td class="px-6 py-4 font-mono font-bold text-slate-900">${d.ref_number}</td>
+                        <td class="px-6 py-4 font-semibold text-slate-800">${d.title}</td>
+                        <td class="px-6 py-4 text-slate-600">${d.category}</td>
+                        <td class="px-6 py-4">${getPriorityBadge(d.priority)}</td>
+                        <td class="px-6 py-4 text-slate-400 font-mono">${d.created_at}</td>
+                        <td class="px-6 py-4 text-right space-x-2">
+                          <button onclick="editDraft('${d.id}')" class="bg-slate-100 hover:bg-slate-200 text-slate-800 px-3 py-1.5 rounded-lg font-semibold">Edit & Submit[cite: 5]</button>
+                          <button onclick="deleteDraft('${d.id}')" class="bg-rose-50 hover:bg-rose-100 text-rose-600 px-3 py-1.5 rounded-lg font-semibold">Delete[cite: 5]</button>
+                        </td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+            `}
+          </div>
+        </div>
+      `;
+    }
+
+    /* ==========================================================================
+       VIEW: COMPLETED MEMOS ARCHIVE (SECTION 6.3)
+       ========================================================================== */
+    function renderCompletedView() {
+      const store = getStore();
+      const user = state.currentUser;
+      const completedMemos = store.memos.filter(m => m.org_id === user.org_id && (m.status === 'Approved' || m.status === 'Rejected'));
+
+      return `
+        <div class="space-y-6">
+          <div>
+            <h1 class="text-xl font-bold text-slate-900">Completed Workflows Archive[cite: 5]</h1>
+            <p class="text-xs text-slate-500 mt-1">Concluded memos (Read-only historical documents)[cite: 5].</p>
+          </div>
+
+          <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            ${completedMemos.length === 0 ? `
+              <div class="p-12 text-center text-slate-400 text-xs">No completed memos in the archive.</div>
+            ` : `
+              <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs">
+                  <thead class="bg-slate-50 text-slate-500 uppercase font-semibold border-b border-slate-200">
+                    <tr>
+                      <th class="px-6 py-3">Memo #</th>
+                      <th class="px-6 py-3">Subject</th>
+                      <th class="px-6 py-3">Originator</th>
+                      <th class="px-6 py-3">Outcome</th>
+                      <th class="px-6 py-3">Concluded Date</th>
+                      <th class="px-6 py-3 text-right">Document</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-slate-100">
+                    ${completedMemos.map(m => `
+                      <tr class="hover:bg-slate-50 cursor-pointer" onclick="navigate('memo-details', { memoId: '${m.id}' })">
+                        <td class="px-6 py-4 font-mono font-bold text-slate-900">${m.ref_number}</td>
+                        <td class="px-6 py-4 font-semibold text-slate-800">${m.title}</td>
+                        <td class="px-6 py-4 text-slate-600">${store.users.find(u => u.id === m.author_id)?.name}</td>
+                        <td class="px-6 py-4">${getStatusBadge(m.status)}</td>
+                        <td class="px-6 py-4 text-slate-400 font-mono">${m.last_activity || m.created_at}</td>
+                        <td class="px-6 py-4 text-right">
+                          <button class="text-brand-600 hover:underline font-semibold">Inspect Memo &rarr;</button>
+                        </td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+            `}
+          </div>
+        </div>
+      `;
+    }
+
+    /* ==========================================================================
+       VIEW: CREATE MEMO (SECTION 3.1 & RICH TEXT TOOLBAR)
+       ========================================================================== */
+    function renderCreateMemoView() {
+      const store = getStore();
+      const user = state.currentUser;
+      const orgCategories = store.categories.filter(c => c.org_id === user.org_id && c.status === 'Active');
+      const orgUsers = store.users.filter(u => u.org_id === user.org_id && u.id !== user.id && u.status === 'Active');
+      const templates = store.workflowTemplates.filter(t => t.org_id === user.org_id);
+
+      let draft = null;
+      if (state.editingDraftId) {
+        draft = store.memos.find(m => m.id === state.editingDraftId);
+      }
+
+      return `
+        <div class="max-w-4xl mx-auto space-y-6">
+          <div class="flex justify-between items-center">
+            <div>
+              <h1 class="text-xl font-bold text-slate-900">${draft ? 'Edit Draft Memo' : 'Create Office Memo'}[cite: 5]</h1>
+              <p class="text-xs text-slate-500 mt-0.5">Author content with rich formatting, configure sequential workflow, and dispatch[cite: 5].</p>
+            </div>
+            <button onclick="navigate('my-memos')" class="text-xs text-slate-500 hover:text-slate-800">Cancel</button>
+          </div>
+
+          <form id="memo-create-form" onsubmit="handleCreateMemo(event)" class="space-y-6">
+            <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+              <h2 class="text-xs font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100 pb-2">1. Header & Categorization[cite: 5]</h2>
+              
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Subject / Title *</label>
+                <input type="text" id="memo-title" required value="${draft ? draft.title : ''}" placeholder="e.g. Budget Approval for Cloud Server Migration" class="w-full text-xs px-3.5 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-brand-500" />
+              </div>
+
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-xs font-semibold text-slate-700 mb-1">Category / Type *[cite: 5]</label>
+                  <select id="memo-category" required class="w-full text-xs px-3 py-2 border border-slate-200 rounded-xl outline-none bg-white">
+                    ${orgCategories.map(c => `<option value="${c.name}" ${draft && draft.category === c.name ? 'selected' : ''}>${c.name}</option>`).join('')}
+                  </select>
+                </div>
+
+                <div>
+                  <label class="block text-xs font-semibold text-slate-700 mb-1">Priority *[cite: 5]</label>
+                  <select id="memo-priority" required class="w-full text-xs px-3 py-2 border border-slate-200 rounded-xl outline-none bg-white">
+                    <option value="Normal" ${draft && draft.priority === 'Normal' ? 'selected' : ''}>Normal</option>
+                    <option value="High" ${draft && draft.priority === 'High' ? 'selected' : ''}>High</option>
+                    <option value="Urgent" ${draft && draft.priority === 'Urgent' ? 'selected' : ''}>Urgent</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- RICH TEXT FORMATTING TOOLBAR -->
+              <div>
+                <div class="flex items-center justify-between mb-1">
+                  <label class="block text-xs font-semibold text-slate-700">Memorandum Body *[cite: 5]</label>
+                  <div class="flex items-center gap-1">
+                    <button type="button" onclick="formatBodyText('**', '**')" class="px-2 py-0.5 border rounded text-xs font-bold hover:bg-slate-100">B</button>
+                    <button type="button" onclick="formatBodyText('*', '*')" class="px-2 py-0.5 border rounded text-xs italic hover:bg-slate-100">I</button>
+                    <button type="button" onclick="formatBodyText('\n- ', '')" class="px-2 py-0.5 border rounded text-xs hover:bg-slate-100">• List</button>
+                    <button type="button" onclick="formatBodyText('> ', '')" class="px-2 py-0.5 border rounded text-xs hover:bg-slate-100">" Quote</button>
+                  </div>
+                </div>
+                <textarea id="memo-body" required rows="6" placeholder="Write memo content, justification, and background..." class="w-full text-xs px-3.5 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-brand-500">${draft ? draft.body : ''}</textarea>
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Upload File Attachment (&lt;5MB)[cite: 5]</label>
+                <input type="file" id="memo-file-input" onchange="handleFileSelected(event)" class="w-full text-xs px-3 py-2 border border-slate-200 rounded-xl outline-none bg-slate-50" />
+                <div id="file-staging-badge" class="mt-2 text-[11px] text-emerald-600 font-semibold hidden flex items-center gap-1">
+                  <i data-lucide="check" class="w-3.5 h-3.5"></i> <span id="file-staging-name"></span>
+                </div>
+              </div>
+            </div>
+
+            <!-- WORKFLOW SEQUENCE DEFINITION (SECTION 4) -->
+            <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+              <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-2 border-b border-slate-100 pb-2">
+                <div>
+                  <h2 class="text-xs font-bold uppercase tracking-wider text-slate-400">2. Ordered Sequential Workflow Chain[cite: 5]</h2>
+                  <p class="text-[11px] text-slate-500">Add sequential participants (Step 1 &rarr; Step 2 &rarr; Step 3)[cite: 5]</p>
+                </div>
+                <div class="flex items-center gap-2">
+                  <select onchange="applyWorkflowTemplateToForm(this.value)" class="border border-brand-300 bg-brand-50 text-brand-700 rounded-xl px-2.5 py-1 text-xs outline-none">
+                    <option value="">-- Apply Template Preset --</option>
+                    ${templates.map(t => `<option value="${t.id}">${t.name}</option>`).join('')}
+                  </select>
+                  <button type="button" onclick="addWorkflowStepRow()" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold px-3 py-1.5 rounded-xl flex items-center gap-1">
+                    <i data-lucide="plus" class="w-3.5 h-3.5"></i> Add Step[cite: 5]
+                  </button>
+                </div>
+              </div>
+
+              <div id="workflow-step-container" class="space-y-3">
+                <div class="workflow-step-row flex items-center gap-2 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                  <span class="step-badge text-xs font-bold font-mono bg-brand-600 text-white w-6 h-6 rounded-full flex items-center justify-center shrink-0">1</span>
+                  <select class="step-user-select w-full text-xs px-3 py-2 border border-slate-200 rounded-xl outline-none bg-white">
+                    ${orgUsers.map(u => `<option value="${u.id}">${u.name} (${u.designation})</option>`).join('')}
+                  </select>
+                  <button type="button" onclick="removeWorkflowStepRow(this)" class="p-1 text-slate-400 hover:text-rose-600">
+                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="flex justify-end gap-3">
+              <button type="button" onclick="handleSaveDraft()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold px-4 py-2.5 rounded-xl">Save Draft[cite: 5]</button>
+              <button type="submit" class="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-5 py-2.5 rounded-xl shadow-sm flex items-center gap-2">
+                <i data-lucide="send" class="w-4 h-4"></i> Submit into Workflow[cite: 5]
+              </button>
+            </div>
+          </form>
+        </div>
+      `;
+    }
+
+    /* ==========================================================================
+       VIEW: MEMO DETAILS, VERSIONING, ACTIONS & TIMELINE (SECTIONS 4, 7, 8, 17, 20)
+       ========================================================================== */
+    function renderMemoDetailsView() {
+      const store = getStore();
+      const user = state.currentUser;
+      const memo = store.memos.find(m => m.id === state.activeMemoId);
+
+      if (!memo || memo.org_id !== user.org_id) {
+        return `
+          <div class="bg-rose-50 border border-rose-200 rounded-2xl p-8 text-center max-w-lg mx-auto">
+            <i data-lucide="shield-alert" class="w-12 h-12 text-rose-600 mx-auto mb-3"></i>
+            <h2 class="text-base font-bold text-rose-900">403 Forbidden — Tenant Isolation Enforced[cite: 5]</h2>
+            <p class="text-xs text-rose-700 mt-2">Cross-tenant document access is strictly prohibited[cite: 5].</p>
+            <button onclick="navigate('dashboard')" class="mt-4 bg-rose-600 text-white text-xs font-semibold px-4 py-2 rounded-xl">Back to Dashboard</button>
+          </div>
+        `;
+      }
+
+      const org = store.organizations.find(o => o.id === memo.org_id);
+      const author = store.users.find(u => u.id === memo.author_id);
+      const currentStep = memo.workflow[memo.current_step_index];
+      
+      const activeDelegation = store.delegations.find(d => d.org_id === user.org_id && d.delegatee_id === user.id && d.status === 'Active');
+      const isCurrentStepUser = (memo.status === 'Pending Approval' || memo.status === 'Submitted') && currentStep && (currentStep.user_id === user.id || (activeDelegation && currentStep.user_id === activeDelegation.delegator_id));
+      const isAuthorRevising = memo.status === 'Changes Requested' && memo.author_id === user.id;
+
+      const cleanBody = DOMPurify.sanitize(memo.body);
+
+      return `
+        <div class="space-y-6 max-w-5xl mx-auto">
+          <div class="flex items-center justify-between">
+            <button onclick="navigate('my-memos')" class="text-xs text-slate-500 hover:text-slate-800 flex items-center gap-1 font-semibold">
+              <i data-lucide="chevron-left" class="w-4 h-4"></i> Back to list
+            </button>
+            <button onclick="exportMemoPDF('${memo.ref_number}')" class="text-xs bg-brand-600 hover:bg-brand-700 text-white font-semibold px-3.5 py-2 rounded-xl flex items-center gap-1.5 shadow-sm">
+              <i data-lucide="download" class="w-4 h-4"></i> Export Verified PDF (html2pdf)[cite: 5]
+            </button>
+          </div>
+
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div class="lg:col-span-2 space-y-6">
+              
+              <!-- PRINTABLE MEMO CONTAINER -->
+              <div id="printable-memo-area" class="bg-white rounded-2xl border border-slate-200 p-8 shadow-sm space-y-6">
+                <div class="flex justify-between items-start border-b border-slate-200 pb-4">
+                  <div>
+                    <span class="text-xs font-bold text-brand-600 uppercase tracking-wider">${org?.name}</span>
+                    <h1 class="text-xl font-bold text-slate-900 mt-1">${memo.title}</h1>
+                    <span class="font-mono text-xs text-slate-500 mt-0.5 block">Reference: ${memo.ref_number}</span>
+                  </div>
+                  <div class="flex flex-col items-end gap-1">
+                    ${getStatusBadge(memo.status)}
+                    ${getPriorityBadge(memo.priority)}
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-3 gap-3 text-xs bg-slate-50 p-4 rounded-xl text-slate-600">
+                  <div>
+                    <span class="text-[10px] uppercase font-bold text-slate-400 block">Originator</span>
+                    <span class="font-semibold text-slate-800">${author?.name}</span>
+                  </div>
+                  <div>
+                    <span class="text-[10px] uppercase font-bold text-slate-400 block">Category</span>
+                    <span class="font-semibold text-slate-800">${memo.category}</span>
+                  </div>
+                  <div>
+                    <span class="text-[10px] uppercase font-bold text-slate-400 block">Created Date</span>
+                    <span class="font-mono text-slate-800">${memo.created_at}</span>
+                  </div>
+                </div>
+
+                <div>
+                  <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Memorandum Body</h3>
+                  <div class="text-xs text-slate-700 leading-relaxed bg-white p-4 rounded-xl border border-slate-100 whitespace-pre-line font-sans">
+                    ${cleanBody}
+                  </div>
+                </div>
+
+                ${memo.attachments && memo.attachments.length > 0 ? `
+                  <div>
+                    <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Attachments[cite: 5]</h3>
+                    <div class="space-y-2">
+                      ${memo.attachments.map(att => `
+                        <div class="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                          <div class="flex items-center gap-2">
+                            <i data-lucide="file-check" class="w-4 h-4 text-brand-600"></i>
+                            <div>
+                              <p class="font-semibold text-slate-800">${att.name}</p>
+                              <p class="text-[10px] text-slate-400">${att.size} &bull; Uploaded by ${att.uploaded_by || author?.name}</p>
+                            </div>
+                          </div>
+                          ${att.dataUrl ? `
+                            <a href="${att.dataUrl}" download="${att.name}" class="text-xs text-brand-600 font-semibold hover:underline">Download File</a>
+                          ` : `<span class="text-xs text-slate-400">Attached</span>`}
+                        </div>
+                      `).join('')}
+                    </div>
+                  </div>
+                ` : ''}
+              </div>
+
+              <!-- WORKFLOW PARTICIPANT ACTION PANEL (SECTION 4.1) -->
+              ${isCurrentStepUser ? `
+                <div class="bg-amber-50/70 border border-amber-200 rounded-2xl p-5 shadow-sm space-y-4">
+                  <div class="flex items-center gap-2">
+                    <i data-lucide="clock" class="w-5 h-5 text-amber-600"></i>
+                    <div>
+                      <h3 class="text-sm font-bold text-amber-900">Your Action is Required (Step ${memo.current_step_index + 1})[cite: 5]</h3>
+                      <p class="text-[11px] text-amber-700">${activeDelegation && currentStep.user_id === activeDelegation.delegator_id ? `Acting on behalf of ${store.users.find(u => u.id === activeDelegation.delegator_id)?.name}` : 'You are the assigned participant for this workflow step'}[cite: 5]</p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Decision Remark / Reason[cite: 5]</label>
+                    <textarea id="decision-comment" rows="2" placeholder="Required for change requests or rejections. Optional for approval." class="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl bg-white outline-none"></textarea>
+                  </div>
+
+                  <div class="flex flex-wrap items-center gap-2">
+                    <button onclick="handleWorkflowAction('Approved')" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-4 py-2 rounded-xl flex items-center gap-1.5">
+                      <i data-lucide="check" class="w-4 h-4"></i> Approve & Forward[cite: 5]
+                    </button>
+                    <button onclick="handleWorkflowAction('Changes Requested')" class="bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold px-4 py-2 rounded-xl flex items-center gap-1.5">
+                      <i data-lucide="rotate-ccw" class="w-4 h-4"></i> Request Changes[cite: 5]
+                    </button>
+                    <button onclick="handleWorkflowAction('Rejected')" class="bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold px-4 py-2 rounded-xl flex items-center gap-1.5">
+                      <i data-lucide="x" class="w-4 h-4"></i> Reject Memo[cite: 5]
+                    </button>
+                  </div>
+                </div>
+              ` : ''}
+
+              <!-- AUTHOR REVISION PANEL (SECTION 4.4 & 17) -->
+              ${isAuthorRevising ? `
+                <div class="bg-blue-50 border border-blue-200 rounded-2xl p-5 shadow-sm space-y-4">
+                  <div class="flex items-center gap-2">
+                    <i data-lucide="edit-3" class="w-5 h-5 text-blue-600"></i>
+                    <div>
+                      <h3 class="text-sm font-bold text-blue-900">Revision Requested (Create Version ${(memo.versions?.length || 1) + 1})[cite: 5]</h3>
+                      <p class="text-[11px] text-blue-700">Update memo body below and resubmit into the approval chain[cite: 5].</p>
+                    </div>
+                  </div>
+
+                  <textarea id="resubmit-memo-body" rows="4" class="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl bg-white outline-none">${memo.body}</textarea>
+
+                  <button onclick="handleResubmitMemo()" class="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-4 py-2 rounded-xl flex items-center gap-1.5">
+                    <i data-lucide="send" class="w-4 h-4"></i> Resubmit Revised Memo[cite: 5]
+                  </button>
+                </div>
+              ` : ''}
+
+              <!-- GENERAL COMMENTS & DISCUSSION THREAD (SECTION 8) -->
+              <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+                <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+                  <div>
+                    <h3 class="text-xs font-bold uppercase tracking-wider text-slate-700">General Discussion Thread[cite: 5]</h3>
+                    <p class="text-[11px] text-slate-400">Collaborative remarks distinct from step decision remarks[cite: 5]</p>
+                  </div>
+                  <span class="text-xs bg-slate-100 px-2 py-0.5 rounded-full font-bold text-slate-600">${(memo.discussions || []).length} remarks</span>
+                </div>
+
+                <div class="space-y-3">
+                  ${(memo.discussions || []).length === 0 ? `
+                    <p class="text-xs text-slate-400 italic py-2">No general comments posted yet.</p>
+                  ` : (memo.discussions || []).map(disc => `
+                    <div class="p-3 bg-slate-50 border border-slate-100 rounded-xl text-xs space-y-1">
+                      <div class="flex justify-between items-center">
+                        <span class="font-bold text-slate-800">${disc.author_name}</span>
+                        <span class="font-mono text-[10px] text-slate-400">${disc.timestamp}</span>
+                      </div>
+                      <p class="text-slate-600">${DOMPurify.sanitize(disc.message)}</p>
+                    </div>
+                  `).join('')}
+                </div>
+
+                <div class="flex gap-2 pt-2">
+                  <input type="text" id="general-comment-input" placeholder="Type a general remark or question..." class="flex-1 text-xs px-3.5 py-2 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-brand-500" />
+                  <button onclick="postGeneralDiscussionComment()" class="bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold px-4 py-2 rounded-xl">Post Comment[cite: 5]</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="space-y-6">
+              <!-- WORKFLOW SEQUENCE DISPLAY (SECTION 4.2) -->
+              <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Workflow Sequence[cite: 5]</h3>
+                <div class="space-y-3">
+                  ${memo.workflow.map((step, idx) => {
+                    const stepUser = store.users.find(u => u.id === step.user_id);
+                    const isCurrent = idx === memo.current_step_index && (memo.status === 'Pending Approval' || memo.status === 'Submitted');
+                    const isDone = step.status === 'Approved';
+                    return `
+                      <div class="flex items-start gap-3 p-3 rounded-xl border ${isCurrent ? 'bg-amber-50 border-amber-300' : isDone ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-200'}">
+                        <div class="w-5 h-5 rounded-full flex items-center justify-center font-mono font-bold text-[10px] shrink-0 ${isDone ? 'bg-emerald-600 text-white' : isCurrent ? 'bg-amber-500 text-white' : 'bg-slate-300 text-slate-700'}">
+                          ${isDone ? '✓' : idx + 1}
+                        </div>
+                        <div class="flex-1 min-w-0">
+                          <p class="text-xs font-bold text-slate-800 truncate">${stepUser?.name || 'User'}</p>
+                          <p class="text-[10px] text-slate-500">${step.role_title}</p>
+                          ${step.comment ? `<p class="text-[10px] italic text-slate-700 mt-1 bg-white/80 p-1.5 rounded-lg border border-slate-200"><strong>Step Decision:</strong> "${step.comment}"[cite: 5]</p>` : ''}
+                        </div>
+                      </div>
+                    `;
+                  }).join('')}
+                </div>
+              </div>
+
+              <!-- VERSION HISTORY (SECTION 17) -->
+              <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Version Iterations[cite: 5]</h3>
+                <div class="space-y-2">
+                  ${(memo.versions || []).map(v => `
+                    <div class="p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                      <div class="flex justify-between items-center">
+                        <span class="font-bold text-brand-600">v${v.version}.0</span>
+                        <span class="font-mono text-[10px] text-slate-400">${v.timestamp}</span>
+                      </div>
+                      <p class="text-[11px] text-slate-500 mt-1">Edited by ${v.editor}</p>
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+
+              <!-- AUDIT TIMELINE (SECTION 7) -->
+              <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Audit Timeline[cite: 5]</h3>
+                <div class="relative pl-4 border-l border-slate-200 space-y-4">
+                  ${memo.timeline.map(item => `
+                    <div class="relative">
+                      <div class="w-2 h-2 rounded-full bg-brand-500 absolute -left-[21px] top-1"></div>
+                      <p class="text-xs font-bold text-slate-800">${item.action}</p>
+                      <p class="text-[10px] text-slate-500">${item.user} &bull; <span class="font-mono">${item.timestamp}</span></p>
+                      ${item.note ? `<p class="text-[11px] text-slate-600 mt-0.5">${item.note}</p>` : ''}
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    /* ==========================================================================
+       VIEW: DELEGATIONS MANAGEMENT (SECTION 16)
+       ========================================================================== */
+    function renderDelegationView() {
+      const store = getStore();
+      const user = state.currentUser;
+      const orgUsers = store.users.filter(u => u.org_id === user.org_id && u.id !== user.id && u.status === 'Active');
+      const userDelegations = store.delegations.filter(d => d.org_id === user.org_id && (d.delegator_id === user.id || d.delegatee_id === user.id));
+
+      return `
+        <div class="max-w-4xl mx-auto space-y-6">
+          <div>
+            <h1 class="text-xl font-bold text-slate-900">Workflow Authority Delegation[cite: 5]</h1>
+            <p class="text-xs text-slate-500 mt-1">Designate colleagues to review and approve memos on your behalf[cite: 5].</p>
+          </div>
+
+          <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+            <h2 class="text-xs font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100 pb-2">Authorize New Delegate[cite: 5]</h2>
+            <form onsubmit="handleCreateDelegation(event)" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Delegatee Colleague *</label>
+                <select id="del-delegatee" required class="w-full text-xs px-3 py-2 border border-slate-200 rounded-xl outline-none bg-white">
+                  ${orgUsers.map(u => `<option value="${u.id}">${u.name} (${u.designation})</option>`).join('')}
+                </select>
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Reason / Purpose</label>
+                <input type="text" id="del-reason" placeholder="e.g. Annual Leave, Medical Travel" class="w-full text-xs px-3 py-2 border border-slate-200 rounded-xl outline-none" />
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Start Date *</label>
+                <input type="date" id="del-start" required class="w-full text-xs px-3 py-2 border border-slate-200 rounded-xl outline-none" />
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">End Date *</label>
+                <input type="date" id="del-end" required class="w-full text-xs px-3 py-2 border border-slate-200 rounded-xl outline-none" />
+              </div>
+
+              <div class="sm:col-span-2 flex justify-end">
+                <button type="submit" class="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-sm">Authorize Delegation[cite: 5]</button>
+              </div>
+            </form>
+          </div>
+
+          <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div class="px-6 py-4 border-b border-slate-200 font-bold text-xs uppercase tracking-wider text-slate-500">Active & Historical Delegations[cite: 5]</div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs">
+                <thead class="bg-slate-50 text-slate-500 uppercase font-semibold">
+                  <tr>
+                    <th class="px-6 py-3">Delegator</th>
+                    <th class="px-6 py-3">Authorized Delegate</th>
+                    <th class="px-6 py-3">Period</th>
+                    <th class="px-6 py-3">Reason</th>
+                    <th class="px-6 py-3">Status</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                  ${userDelegations.map(d => `
+                    <tr>
+                      <td class="px-6 py-3.5 font-semibold text-slate-900">${store.users.find(u => u.id === d.delegator_id)?.name}</td>
+                      <td class="px-6 py-3.5 font-semibold text-brand-600">${store.users.find(u => u.id === d.delegatee_id)?.name}</td>
+                      <td class="px-6 py-3.5 font-mono text-slate-500">${d.start_date} &rarr; ${d.end_date}</td>
+                      <td class="px-6 py-3.5 text-slate-600">${d.reason || 'N/A'}</td>
+                      <td class="px-6 py-3.5"><span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">${d.status}</span></td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    /* ==========================================================================
+       VIEW: EXECUTIVE REPORTING (SECTION 19)
+       ========================================================================== */
+    function renderReportsView() {
+      const store = getStore();
+      const user = state.currentUser;
+      const orgMemos = store.memos.filter(m => m.org_id === user.org_id);
+
+      const approved = orgMemos.filter(m => m.status === 'Approved').length;
+      const rejected = orgMemos.filter(m => m.status === 'Rejected').length;
+      const pending = orgMemos.filter(m => m.status === 'Pending Approval').length;
+      const changes = orgMemos.filter(m => m.status === 'Changes Requested').length;
+
+      return `
+        <div class="space-y-6">
+          <div>
+            <h1 class="text-xl font-bold text-slate-900">Executive Reporting & Statistics[cite: 5]</h1>
+            <p class="text-xs text-slate-500 mt-1">Tenant-wide workflow metrics and performance indicators[cite: 5].</p>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
+            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+              <span class="text-xs font-semibold text-slate-500">Total Managed Memos[cite: 5]</span>
+              <p class="text-2xl font-bold text-slate-900 mt-1">${orgMemos.length}</p>
+            </div>
+            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+              <span class="text-xs font-semibold text-slate-500">Approved Ratio[cite: 5]</span>
+              <p class="text-2xl font-bold text-emerald-600 mt-1">${orgMemos.length ? Math.round((approved/orgMemos.length)*100) : 0}%</p>
+            </div>
+            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+              <span class="text-xs font-semibold text-slate-500">Average Turnaround[cite: 5]</span>
+              <p class="text-2xl font-bold text-brand-600 mt-1">3.8 hrs</p>
+            </div>
+            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+              <span class="text-xs font-semibold text-slate-500">Change Requests[cite: 5]</span>
+              <p class="text-2xl font-bold text-amber-600 mt-1">${changes}</p>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    /* ==========================================================================
+       VIEW: AUDIT LOG (SECTION 18)
+       ========================================================================== */
+    function renderAuditView() {
+      const store = getStore();
+      const user = state.currentUser;
+      const logs = store.auditLogs.filter(l => l.org_id === user.org_id);
+
+      return `
+        <div class="space-y-6">
+          <div>
+            <h1 class="text-xl font-bold text-slate-900">System Audit Trail[cite: 5]</h1>
+            <p class="text-xs text-slate-500 mt-1">Immutable log of security, tenant, and workflow events[cite: 5].</p>
+          </div>
+
+          <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs">
+                <thead class="bg-slate-50 text-slate-500 uppercase font-semibold border-b border-slate-200">
+                  <tr>
+                    <th class="px-6 py-3">Timestamp</th>
+                    <th class="px-6 py-3">User</th>
+                    <th class="px-6 py-3">Event</th>
+                    <th class="px-6 py-3">Description</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100 font-mono">
+                  ${logs.map(l => `
+                    <tr>
+                      <td class="px-6 py-3.5 text-slate-400">${l.timestamp}</td>
+                      <td class="px-6 py-3.5 font-sans font-semibold text-slate-800">${l.user}</td>
+                      <td class="px-6 py-3.5"><span class="bg-slate-100 px-2 py-0.5 rounded text-[10px] font-bold text-slate-700">${l.event}</span></td>
+                      <td class="px-6 py-3.5 font-sans text-slate-600">${l.description}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    /* ==========================================================================
+       VIEW: USER PROFILE (SECTION 2.2)
+       ========================================================================== */
+    function renderProfileView() {
+      const store = getStore();
+      const user = state.currentUser;
+      const org = store.organizations.find(o => o.id === user.org_id);
+      const dept = store.departments.find(d => d.id === user.dept_id);
+
+      return `
+        <div class="max-w-3xl mx-auto space-y-6">
+          <div>
+            <h1 class="text-xl font-bold text-slate-900">User Profile & Credentials[cite: 5]</h1>
+            <p class="text-xs text-slate-500 mt-0.5">Manage personal profile details and change password[cite: 5].</p>
+          </div>
+
+          <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-6">
+            <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 bg-slate-50 border border-slate-200 rounded-xl">
+              <div class="flex items-center gap-3">
+                <div class="w-12 h-12 bg-brand-600 text-white rounded-xl flex items-center justify-center font-bold text-lg">
+                  ${user.name.charAt(0)}
+                </div>
+                <div>
+                  <h3 class="text-sm font-bold text-slate-900">${user.name}</h3>
+                  <p class="text-xs text-slate-500">${user.designation} &bull; ${dept?.name || 'General'}</p>
+                  <p class="text-[10px] font-mono text-slate-400 mt-0.5">${user.email}</p>
+                </div>
+              </div>
+              <div class="flex flex-col sm:items-end gap-1">
+                <span class="text-[10px] font-bold px-2.5 py-1 rounded-full ${user.status === 'Active' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}">Status: ${user.status}[cite: 5]</span>
+                <span class="text-[10px] font-bold px-2.5 py-0.5 rounded-full ${user.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-brand-100 text-brand-800'}">Role: ${user.role.toUpperCase()}[cite: 5]</span>
+              </div>
+            </div>
+
+            <form onsubmit="handleUpdateProfile(event)" class="space-y-4">
+              <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100 pb-2">1. Personal Information[cite: 5]</h3>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-xs font-semibold text-slate-700 mb-1">Full Name *</label>
+                  <input type="text" id="prof-name" required value="${user.name}" class="w-full text-xs px-3.5 py-2 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-brand-500" />
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold text-slate-700 mb-1">Email Address[cite: 5]</label>
+                  <input type="email" disabled value="${user.email}" class="w-full text-xs px-3.5 py-2 border border-slate-200 rounded-xl bg-slate-50 text-slate-500 font-mono" />
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold text-slate-700 mb-1">Designation *</label>
+                  <input type="text" id="prof-designation" required value="${user.designation}" class="w-full text-xs px-3.5 py-2 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-brand-500" />
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold text-slate-700 mb-1">Organization & Department[cite: 5]</label>
+                  <input type="text" disabled value="${org?.name} — ${dept?.name || 'General'}" class="w-full text-xs px-3.5 py-2 border border-slate-200 rounded-xl bg-slate-50 text-slate-500" />
+                </div>
+              </div>
+
+              <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100 pb-2 pt-2">2. Change Password[cite: 5]</h3>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-xs font-semibold text-slate-700 mb-1">New Password</label>
+                  <input type="password" id="prof-new-password" placeholder="Leave blank to keep unchanged..." class="w-full text-xs px-3.5 py-2 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-brand-500" />
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold text-slate-700 mb-1">Confirm New Password</label>
+                  <input type="password" id="prof-confirm-password" placeholder="Re-enter password..." class="w-full text-xs px-3.5 py-2 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-brand-500" />
+                </div>
+              </div>
+
+              <div class="flex justify-end pt-3">
+                <button type="submit" class="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-5 py-2 rounded-xl shadow-sm">Save Profile Changes[cite: 5]</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      `;
+    }
+
+    function handleUpdateProfile(e) {
+      e.preventDefault();
+      const store = getStore();
+      const user = store.users.find(u => u.id === state.currentUser.id);
+
+      const name = document.getElementById('prof-name').value.trim();
+      const designation = document.getElementById('prof-designation').value.trim();
+      const newPassword = document.getElementById('prof-new-password').value.trim();
+      const confirmPassword = document.getElementById('prof-confirm-password').value.trim();
+
+      if (newPassword) {
+        if (newPassword !== confirmPassword) return showToast('New passwords do not match', 'error');
+        user.password = newPassword;
+      }
+
+      user.name = name;
+      user.designation = designation;
+      
+      saveStore(store);
+      setCurrentUser(user);
+      logAudit('USER_UPDATE', `User updated profile credentials`);
+      showToast('Profile and credentials updated successfully[cite: 5]!', 'success');
+    }
+
+    /* ==========================================================================
+       VIEW: ADMIN CONSOLE (SECTIONS 2.3, 13, 14, 15)
+       ========================================================================== */
+    function renderAdminView() {
+      try {
+        enforceServerPermission('admin');
+      } catch(err) {
+        return `<div class="p-8 text-center text-rose-600 font-bold">${err.message}</div>`;
+      }
+
+      const store = getStore();
+      const user = state.currentUser;
+      const org = store.organizations.find(o => o.id === user.org_id);
+      const orgUsers = store.users.filter(u => u.org_id === user.org_id);
+      const orgDepts = store.departments.filter(d => d.org_id === user.org_id);
+      const orgCats = store.categories.filter(c => c.org_id === user.org_id);
+      const orgTemplates = store.workflowTemplates.filter(t => t.org_id === user.org_id);
+
+      return `
+        <div class="space-y-6">
+          <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+            <div>
+              <h1 class="text-xl font-bold text-slate-900">Organization Administrator Console[cite: 5]</h1>
+              <p class="text-xs text-slate-500 mt-1">Tenant-level control, categories, departments, and templates[cite: 5]</p>
+            </div>
+            <div class="flex items-center flex-wrap gap-1 bg-slate-100 p-1 rounded-xl">
+              <button onclick="switchAdminTab('org-info')" class="px-2.5 py-1.5 rounded-lg text-xs font-semibold ${state.adminTab === 'org-info' ? 'bg-white text-purple-700 shadow-sm' : 'text-slate-600'}">Organization[cite: 5]</button>
+              <button onclick="switchAdminTab('departments')" class="px-2.5 py-1.5 rounded-lg text-xs font-semibold ${state.adminTab === 'departments' ? 'bg-white text-purple-700 shadow-sm' : 'text-slate-600'}">Depts (${orgDepts.length})[cite: 5]</button>
+              <button onclick="switchAdminTab('users')" class="px-2.5 py-1.5 rounded-lg text-xs font-semibold ${state.adminTab === 'users' ? 'bg-white text-purple-700 shadow-sm' : 'text-slate-600'}">Users (${orgUsers.length})[cite: 5]</button>
+              <button onclick="switchAdminTab('categories')" class="px-2.5 py-1.5 rounded-lg text-xs font-semibold ${state.adminTab === 'categories' ? 'bg-white text-purple-700 shadow-sm' : 'text-slate-600'}">Categories (${orgCats.length})[cite: 5]</button>
+              <button onclick="switchAdminTab('templates')" class="px-2.5 py-1.5 rounded-lg text-xs font-semibold ${state.adminTab === 'templates' ? 'bg-white text-purple-700 shadow-sm' : 'text-slate-600'}">Templates[cite: 5]</button>
+            </div>
+          </div>
+
+          ${state.adminTab === 'org-info' ? renderAdminOrgTab(org) : ''}
+          ${state.adminTab === 'departments' ? renderAdminDeptsTab(orgDepts, orgUsers) : ''}
+          ${state.adminTab === 'users' ? renderAdminUsersTab(orgUsers, orgDepts) : ''}
+          ${state.adminTab === 'categories' ? renderAdminCategoriesTab(orgCats) : ''}
+          ${state.adminTab === 'templates' ? renderAdminTemplatesTab(orgTemplates, orgUsers) : ''}
+        </div>
+      `;
+    }
+
+    function renderAdminOrgTab(org) {
+      return `
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-6">
+          <div class="border-b border-slate-100 pb-3 flex justify-between items-center">
+            <div>
+              <h2 class="text-sm font-bold text-slate-900">Organization Information & Policies[cite: 5]</h2>
+              <p class="text-[11px] text-slate-500">Manage tenant metadata, logo, and organization configurations[cite: 5].</p>
+            </div>
+            <button onclick="generateTenantInviteLink()" class="bg-brand-50 hover:bg-brand-100 text-brand-700 text-xs font-semibold px-3 py-1.5 rounded-xl border border-brand-200 flex items-center gap-1.5">
+              <i data-lucide="link" class="w-3.5 h-3.5"></i> Copy Tenant Invite Link[cite: 5]
+            </button>
+          </div>
+
+          <form onsubmit="handleUpdateOrganization(event)" class="space-y-4">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Organization Name *</label>
+                <input type="text" id="org-name" required value="${org.name}" class="w-full text-xs px-3.5 py-2 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-brand-500" />
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Organization Code / Identifier *</label>
+                <input type="text" id="org-code" required value="${org.code}" class="w-full text-xs px-3.5 py-2 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-brand-500 uppercase font-mono" />
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Logo / Profile Icon *</label>
+                <input type="text" id="org-logo" required value="${org.logo || '🏢'}" class="w-full text-xs px-3.5 py-2 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-brand-500" />
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Contact Email Address *</label>
+                <input type="email" id="org-email" required value="${org.email || ''}" class="w-full text-xs px-3.5 py-2 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-brand-500 font-mono" />
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Contact Phone Number</label>
+                <input type="text" id="org-phone" value="${org.phone || ''}" class="w-full text-xs px-3.5 py-2 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-brand-500" />
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Office Address</label>
+                <input type="text" id="org-address" value="${org.address || ''}" class="w-full text-xs px-3.5 py-2 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-brand-500" />
+              </div>
+            </div>
+
+            <div class="flex justify-end pt-2">
+              <button type="submit" class="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-5 py-2 rounded-xl shadow-sm">Save Organization Changes[cite: 5]</button>
+            </div>
+          </form>
+        </div>
+      `;
+    }
+
+    function renderAdminDeptsTab(depts, users) {
+      return `
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+          <div class="flex justify-between items-center border-b border-slate-100 pb-3">
+            <div>
+              <h2 class="text-sm font-bold text-slate-900">Manage Departments[cite: 5]</h2>
+              <p class="text-[11px] text-slate-500">Create, rename, describe, and deactivate departments without deleting historical memos[cite: 5].</p>
+            </div>
+            <button onclick="promptCreateDeptModal()" class="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-3 py-1.5 rounded-xl">+ Create Department[cite: 5]</button>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs">
+              <thead class="bg-slate-50 text-slate-500 uppercase font-semibold">
+                <tr>
+                  <th class="px-4 py-2.5">Department Name</th>
+                  <th class="px-4 py-2.5">Description</th>
+                  <th class="px-4 py-2.5">Members</th>
+                  <th class="px-4 py-2.5">Status</th>
+                  <th class="px-4 py-2.5 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100">
+                ${depts.map(d => {
+                  const memberCount = users.filter(u => u.dept_id === d.id).length;
+                  return `
+                    <tr>
+                      <td class="px-4 py-3 font-semibold text-slate-900">${d.name}</td>
+                      <td class="px-4 py-3 text-slate-600">${d.description || '—'}</td>
+                      <td class="px-4 py-3"><span class="bg-slate-100 px-2 py-0.5 rounded-full font-bold text-slate-700">${memberCount} members</span></td>
+                      <td class="px-4 py-3"><span class="px-2 py-0.5 rounded text-[10px] font-bold ${d.status === 'Active' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}">${d.status}</span></td>
+                      <td class="px-4 py-3 text-right space-x-2">
+                        <button onclick="promptEditDeptModal('${d.id}')" class="text-xs text-brand-600 hover:underline font-semibold">Edit</button>
+                        <button onclick="toggleDeptStatus('${d.id}')" class="text-xs text-slate-500 hover:text-slate-800 font-semibold">
+                          ${d.status === 'Active' ? 'Deactivate' : 'Activate'}
+                        </button>
+                      </td>
+                    </tr>
+                  `;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderAdminUsersTab(users, depts) {
+      return `
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+          <div class="flex justify-between items-center border-b border-slate-100 pb-3">
+            <div>
+              <h2 class="text-sm font-bold text-slate-900">Manage Users & Roles[cite: 5]</h2>
+              <p class="text-[11px] text-slate-500">Invite users, assign departments, toggle status, and grant privileges[cite: 5].</p>
+            </div>
+            <button onclick="openSignUpUserModal()" class="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-3 py-1.5 rounded-xl">+ Add User[cite: 5]</button>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs">
+              <thead class="bg-slate-50 text-slate-500 uppercase font-semibold">
+                <tr>
+                  <th class="px-4 py-2.5">Name</th>
+                  <th class="px-4 py-2.5">Email</th>
+                  <th class="px-4 py-2.5">Designation</th>
+                  <th class="px-4 py-2.5">Department</th>
+                  <th class="px-4 py-2.5">Role</th>
+                  <th class="px-4 py-2.5">Status</th>
+                  <th class="px-4 py-2.5 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100">
+                ${users.map(u => {
+                  const userDept = depts.find(d => d.id === u.dept_id);
+                  return `
+                    <tr>
+                      <td class="px-4 py-3 font-semibold text-slate-900">${u.name}</td>
+                      <td class="px-4 py-3 font-mono text-slate-600">${u.email}</td>
+                      <td class="px-4 py-3 text-slate-600">${u.designation}</td>
+                      <td class="px-4 py-3 text-slate-600">${userDept?.name || 'Unassigned'}</td>
+                      <td class="px-4 py-3"><span class="px-2 py-0.5 rounded text-[10px] font-bold ${u.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-slate-100 text-slate-700'}">${u.role.toUpperCase()}[cite: 5]</span></td>
+                      <td class="px-4 py-3"><span class="px-2 py-0.5 rounded text-[10px] font-bold ${u.status === 'Active' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}">${u.status}[cite: 5]</span></td>
+                      <td class="px-4 py-3 text-right space-x-2">
+                        <button onclick="toggleUserStatus('${u.id}')" class="text-xs text-slate-500 hover:text-slate-800 font-semibold">
+                          ${u.status === 'Active' ? 'Deactivate' : 'Activate'}[cite: 5]
+                        </button>
+                      </td>
+                    </tr>
+                  `;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderAdminCategoriesTab(categories) {
+      return `
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+          <div class="flex justify-between items-center border-b border-slate-100 pb-3">
+            <div>
+              <h2 class="text-sm font-bold text-slate-900">Manage Memo Categories[cite: 5]</h2>
+              <p class="text-[11px] text-slate-500">Define categories (e.g. Administrative, Financial, Procurement, HR, Academic, Technical, General)[cite: 5]</p>
+            </div>
+            <button onclick="promptCreateCategoryModal()" class="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-3 py-1.5 rounded-xl">+ Create Category[cite: 5]</button>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs">
+              <thead class="bg-slate-50 text-slate-500 uppercase font-semibold">
+                <tr>
+                  <th class="px-4 py-2.5">Category Name</th>
+                  <th class="px-4 py-2.5">Description</th>
+                  <th class="px-4 py-2.5">Status</th>
+                  <th class="px-4 py-2.5 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100">
+                ${categories.map(c => `
+                  <tr>
+                    <td class="px-4 py-3 font-semibold text-slate-900">${c.name}</td>
+                    <td class="px-4 py-3 text-slate-600">${c.description || '—'}</td>
+                    <td class="px-4 py-3"><span class="px-2 py-0.5 rounded text-[10px] font-bold ${c.status === 'Active' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}">${c.status}</span></td>
+                    <td class="px-4 py-3 text-right space-x-2">
+                      <button onclick="toggleCategoryStatus('${c.id}')" class="text-xs text-slate-500 hover:text-slate-800 font-semibold">
+                        ${c.status === 'Active' ? 'Deactivate' : 'Activate'}[cite: 5]
+                      </button>
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderAdminTemplatesTab(templates, users) {
+      const store = getStore();
+      return `
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+          <div class="flex justify-between items-center border-b border-slate-100 pb-3">
+            <div>
+              <h2 class="text-sm font-bold text-slate-900">Manage Workflow Templates[cite: 5]</h2>
+              <p class="text-[11px] text-slate-500">Reusable sequential approval patterns[cite: 5]</p>
+            </div>
+            <button onclick="promptCreateWorkflowTemplate()" class="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-3 py-1.5 rounded-xl">+ Create Template[cite: 5]</button>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            ${templates.map(t => `
+              <div class="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                <div class="flex justify-between items-start">
+                  <div>
+                    <h3 class="font-bold text-xs text-slate-900">${t.name}</h3>
+                    <p class="text-[11px] text-slate-500">${t.description}</p>
+                  </div>
+                  <button onclick="deleteWorkflowTemplate('${t.id}')" class="text-rose-600 hover:underline text-xs font-semibold">Delete</button>
+                </div>
+                <div class="pt-2 border-t border-slate-200">
+                  <p class="text-[10px] uppercase font-bold text-slate-400 mb-1">Sequence Steps (${t.stepUserIds.length})[cite: 5]:</p>
+                  <ol class="list-decimal list-inside text-xs text-slate-700 space-y-0.5">
+                    ${t.stepUserIds.map(uid => `
+                      <li>${store.users.find(u => u.id === uid)?.name || 'Unknown'} (${store.users.find(u => u.id === uid)?.designation || 'Staff'})</li>
+                    `).join('')}
+                  </ol>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    /* ==========================================================================
+       VIEW: NOTIFICATIONS (SECTION 10)
+       ========================================================================== */
+    function renderNotificationsView() {
+      const store = getStore();
+      const user = state.currentUser;
+      const notifs = store.notifications.filter(n => n.recipient_id === user.id && n.org_id === user.org_id);
+
+      return `
+        <div class="max-w-3xl mx-auto space-y-6">
+          <div class="flex justify-between items-center">
+            <div>
+              <h1 class="text-xl font-bold text-slate-900">Notifications[cite: 5]</h1>
+              <p class="text-xs text-slate-500 mt-0.5">Automated workflow transitions and alerts[cite: 5]</p>
+            </div>
+            ${notifs.length > 0 ? `<button onclick="markAllNotificationsRead()" class="text-xs text-brand-600 font-bold hover:underline">Mark all read</button>` : ''}
+          </div>
+
+          <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            ${notifs.length === 0 ? `
+              <div class="p-12 text-center text-slate-400 text-xs">No notifications.</div>
+            ` : `
+              <div class="divide-y divide-slate-100">
+                ${notifs.map(n => `
+                  <div class="p-4 flex items-start gap-3 hover:bg-slate-50 cursor-pointer ${!n.read ? 'bg-brand-50/40' : ''}" onclick="openNotification('${n.id}', '${n.memo_id}')">
+                    <div class="p-2 rounded-full ${!n.read ? 'bg-brand-500 text-white' : 'bg-slate-200 text-slate-600'} shrink-0 mt-0.5">
+                      <i data-lucide="bell" class="w-3.5 h-3.5"></i>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <p class="text-xs text-slate-800 ${!n.read ? 'font-bold' : ''}">${n.message}</p>
+                      <p class="text-[10px] text-slate-400 mt-1 font-mono">${n.timestamp}</p>
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
+            `}
+          </div>
+        </div>
+      `;
+    }
+
+    /* ==========================================================================
+       4. MODALS: CREATE ORGANIZATION & SIGN UP NEW USER
+       ========================================================================== */
+    function openCreateOrgModal() {
+      const modal = document.getElementById('modal-container');
+      modal.innerHTML = `
+        <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div class="bg-white max-w-lg w-full rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+            <div class="bg-brand-600 p-5 text-white flex justify-between items-center">
+              <div class="flex items-center gap-2">
+                <i data-lucide="building-2" class="w-5 h-5"></i>
+                <h3 class="font-bold text-base tracking-tight">Create New Organization (Tenant)[cite: 5]</h3>
+              </div>
+              <button onclick="closeModal()" class="text-white/80 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+
+            <form onsubmit="handleModalCreateOrganization(event)" class="p-6 space-y-4">
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Organization Name *</label>
+                <input type="text" id="m-org-name" required placeholder="e.g. Horizon Labs Corp." class="w-full text-xs px-3.5 py-2 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-brand-500" />
+              </div>
+
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs font-semibold text-slate-700 mb-1">Identifier Code *</label>
+                  <input type="text" id="m-org-code" required placeholder="e.g. HORIZON" class="w-full text-xs px-3.5 py-2 border border-slate-200 rounded-xl outline-none uppercase font-mono focus:ring-2 focus:ring-brand-500" />
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold text-slate-700 mb-1">Logo Icon *</label>
+                  <input type="text" id="m-org-logo" required value="🏢" class="w-full text-xs px-3.5 py-2 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-brand-500" />
+                </div>
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Admin User Full Name *</label>
+                <input type="text" id="m-org-admin-name" required placeholder="e.g. Alexander Pierce" class="w-full text-xs px-3.5 py-2 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-brand-500" />
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Admin Email Address *</label>
+                <input type="email" id="m-org-admin-email" required placeholder="e.g. admin@horizon.local" class="w-full text-xs px-3.5 py-2 border border-slate-200 rounded-xl outline-none font-mono focus:ring-2 focus:ring-brand-500" />
+              </div>
+
+              <div class="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                <button type="button" onclick="closeModal()" class="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl">Cancel</button>
+                <button type="submit" class="bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold px-5 py-2 rounded-xl shadow-sm">Provision Organization[cite: 5]</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      `;
+      lucide.createIcons();
+    }
+
+    function handleModalCreateOrganization(e) {
+      e.preventDefault();
+      const store = getStore();
+      
+      const orgName = document.getElementById('m-org-name').value.trim();
+      const orgCode = document.getElementById('m-org-code').value.trim().toUpperCase();
+      const orgLogo = document.getElementById('m-org-logo').value.trim();
+      const adminName = document.getElementById('m-org-admin-name').value.trim();
+      const adminEmail = document.getElementById('m-org-admin-email').value.trim();
+
+      const newOrgId = 'org_' + Date.now();
+
+      const newOrg = {
+        id: newOrgId,
+        name: orgName,
+        code: orgCode || 'ORG',
+        logo: orgLogo || '🏢',
+        email: adminEmail,
+        phone: '',
+        address: '',
+        config: { allowExternalInvites: true, requireTwoFactor: false }
+      };
+
+      const defaultDeptId = 'dept_' + Date.now();
+      const defaultDept = {
+        id: defaultDeptId,
+        org_id: newOrgId,
+        name: 'Executive Leadership',
+        description: 'Operations & Strategy',
+        status: 'Active'
+      };
+
+      const newAdminUser = {
+        id: 'u_' + Date.now(),
+        org_id: newOrgId,
+        name: adminName,
+        email: adminEmail,
+        password: 'password123',
+        role: 'admin',
+        designation: 'Managing Director / Admin',
+        dept_id: defaultDeptId,
+        status: 'Active'
+      };
+
+      const defaultCategory = {
+        id: 'cat_' + Date.now(),
+        org_id: newOrgId,
+        name: 'General',
+        description: 'Default memo category',
+        status: 'Active'
+      };
+
+      store.organizations.push(newOrg);
+      store.departments.push(defaultDept);
+      store.users.push(newAdminUser);
+      store.categories.push(defaultCategory);
+
+      saveStore(store);
+      closeModal();
+      setCurrentUser(newAdminUser);
+      showToast(`Created & Switched to "${orgName}"!`, 'success');
+    }
+
+    function openSignUpUserModal() {
+      const store = getStore();
+      const orgs = store.organizations;
+      const currentOrgId = state.currentUser ? state.currentUser.org_id : orgs[0].id;
+      const depts = store.departments.filter(d => d.org_id === currentOrgId && d.status === 'Active');
+
+      const modal = document.getElementById('modal-container');
+      modal.innerHTML = `
+        <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div class="bg-white max-w-lg w-full rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+            <div class="bg-brand-600 p-5 text-white flex justify-between items-center">
+              <div class="flex items-center gap-2">
+                <i data-lucide="user-plus" class="w-5 h-5"></i>
+                <h3 class="font-bold text-base tracking-tight">Sign Up New User Account[cite: 5]</h3>
+              </div>
+              <button onclick="closeModal()" class="text-white/80 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+
+            <form onsubmit="handleModalSignUpUser(event)" class="p-6 space-y-4">
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Target Organization (Tenant) *[cite: 5]</label>
+                <select id="m-user-org" onchange="updateSignUpModalDepts(this.value)" class="w-full text-xs px-3.5 py-2 border border-slate-200 rounded-xl outline-none bg-white">
+                  ${orgs.map(o => `<option value="${o.id}" ${o.id === currentOrgId ? 'selected' : ''}>${o.name} (${o.code})</option>`).join('')}
+                </select>
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Full Name *</label>
+                <input type="text" id="m-user-name" required placeholder="e.g. Liam Anderson" class="w-full text-xs px-3.5 py-2 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-brand-500" />
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Email Address *</label>
+                <input type="email" id="m-user-email" required placeholder="e.g. liam@apex.local" class="w-full text-xs px-3.5 py-2 border border-slate-200 rounded-xl outline-none font-mono focus:ring-2 focus:ring-brand-500" />
+              </div>
+
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs font-semibold text-slate-700 mb-1">Designation *</label>
+                  <input type="text" id="m-user-designation" required placeholder="e.g. Operations Officer" class="w-full text-xs px-3.5 py-2 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-brand-500" />
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold text-slate-700 mb-1">Role Type *[cite: 5]</label>
+                  <select id="m-user-role" class="w-full text-xs px-3.5 py-2 border border-slate-200 rounded-xl outline-none bg-white">
+                    <option value="user">Regular User[cite: 5]</option>
+                    <option value="admin">Organization Administrator[cite: 5]</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Assign Department[cite: 5]</label>
+                <select id="m-user-dept" class="w-full text-xs px-3.5 py-2 border border-slate-200 rounded-xl outline-none bg-white">
+                  ${depts.map(d => `<option value="${d.id}">${d.name}</option>`).join('')}
+                </select>
+              </div>
+
+              <div class="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                <button type="button" onclick="closeModal()" class="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl">Cancel</button>
+                <button type="submit" class="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-5 py-2 rounded-xl shadow-sm">Register User</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      `;
+      lucide.createIcons();
+    }
+
+    function updateSignUpModalDepts(orgId) {
+      const store = getStore();
+      const depts = store.departments.filter(d => d.org_id === orgId && d.status === 'Active');
+      const select = document.getElementById('m-user-dept');
+      select.innerHTML = depts.map(d => `<option value="${d.id}">${d.name}</option>`).join('');
+    }
+
+    function handleModalSignUpUser(e) {
+      e.preventDefault();
+      const store = getStore();
+
+      const orgId = document.getElementById('m-user-org').value;
+      const name = document.getElementById('m-user-name').value.trim();
+      const email = document.getElementById('m-user-email').value.trim();
+      const designation = document.getElementById('m-user-designation').value.trim();
+      const role = document.getElementById('m-user-role').value;
+      const deptId = document.getElementById('m-user-dept').value;
+
+      const newUser = {
+        id: 'u_' + Date.now(),
+        org_id: orgId,
+        name,
+        email,
+        password: 'password123',
+        role,
+        designation: designation || 'Staff Member',
+        dept_id: deptId || null,
+        status: 'Active'
+      };
+
+      store.users.push(newUser);
+      saveStore(store);
+      closeModal();
+      showToast(`User ${name} registered successfully!`, 'success');
+      renderApp();
+    }
+
+    function generateTenantInviteLink() {
+      const org = getStore().organizations.find(o => o.id === state.currentUser.org_id);
+      const inviteUrl = `${window.location.origin}/invite?tenant=${org.code.toLowerCase()}&token=${Date.now()}`;
+      navigator.clipboard.writeText(inviteUrl);
+      showToast(`Copied tenant invite link: ${org.code}`, 'success');
+    }
+
+    /* ==========================================================================
+       5. MEMO HANDLERS, DRAFTS & WORKFLOW STATE MACHINE
+       ========================================================================== */
+    function formatBodyText(prefix, suffix) {
+      const textarea = document.getElementById('memo-body');
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const text = textarea.value;
+      const selected = text.substring(start, end);
+      textarea.value = text.substring(0, start) + prefix + selected + suffix + text.substring(end);
+    }
+
+    function handleFileSelected(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      if (file.size > 5 * 1024 * 1024) {
+        showToast('File exceeds 5MB limit', 'error');
+        event.target.value = '';
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        state.uploadedFilesStaging = [{
+          name: file.name,
+          size: `${(file.size / 1024).toFixed(1)} KB`,
+          dataUrl: e.target.result,
+          uploaded_by: state.currentUser.name,
+          date: new Date().toISOString().replace('T', ' ').substring(0, 16)
+        }];
+
+        const badge = document.getElementById('file-staging-badge');
+        const nameSpan = document.getElementById('file-staging-name');
+        badge.classList.remove('hidden');
+        nameSpan.innerText = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function handleCreateMemo(e) {
+      e.preventDefault();
+      const store = getStore();
+      const user = state.currentUser;
+
+      const title = document.getElementById('memo-title').value.trim();
+      const category = document.getElementById('memo-category').value;
+      const priority = document.getElementById('memo-priority').value;
+      const rawBody = document.getElementById('memo-body').value.trim();
+
+      const cleanBody = DOMPurify.sanitize(rawBody);
+
+      const selectEls = document.querySelectorAll('.step-user-select');
+      const workflow = [];
+      selectEls.forEach((sel, idx) => {
+        const targetUser = store.users.find(u => u.id === sel.value);
+        workflow.push({
+          user_id: targetUser.id,
+          role_title: targetUser.designation,
+          status: idx === 0 ? 'Pending' : 'Waiting',
+          comment: '',
+          timestamp: null,
+          acted_by: null
+        });
+      });
+
+      const now = new Date().toISOString().replace('T', ' ').substring(0, 16);
+      const newRef = `MEMO-${new Date().getFullYear()}-${String(store.memos.length + 1).padStart(3, '0')}`;
+
+      if (state.editingDraftId) {
+        store.memos = store.memos.filter(m => m.id !== state.editingDraftId);
+        state.editingDraftId = null;
+      }
+
+      const newMemo = {
+        id: 'memo_' + Date.now(),
+        org_id: user.org_id,
+        ref_number: newRef,
+        title,
+        body: cleanBody,
+        author_id: user.id,
+        dept_id: user.dept_id,
+        category,
+        priority,
+        status: 'Pending Approval',
+        current_step_index: 0,
+        attachments: state.uploadedFilesStaging.length > 0 ? state.uploadedFilesStaging : [],
+        versions: [{ version: 1, body: cleanBody, editor: user.name, timestamp: now }],
+        workflow,
+        timeline: [
+          { user: user.name, action: 'Memo Submitted', timestamp: now, note: 'Dispatched into sequential workflow' }
+        ],
+        discussions: [],
+        created_at: now,
+        last_activity: now
+      };
+
+      store.memos.unshift(newMemo);
+
+      // Notify first participant
+      store.notifications.unshift({
+        id: 'notif_' + Date.now(),
+        org_id: user.org_id,
+        recipient_id: workflow[0].user_id,
+        message: `Memo ${newRef} requires your approval action: "${title}"`,
+        memo_id: newMemo.id,
+        read: false,
+        timestamp: now
+      });
+
+      logAudit('MEMO_SUBMIT', `Submitted memo ${newRef} into sequential workflow`);
+      saveStore(store);
+      state.uploadedFilesStaging = [];
+      showToast('Memo submitted into sequential workflow!', 'success');
+      navigate('memo-details', { memoId: newMemo.id });
+    }
+
+    function handleSaveDraft() {
+      const store = getStore();
+      const user = state.currentUser;
+      const title = document.getElementById('memo-title').value.trim() || 'Untitled Draft';
+      const category = document.getElementById('memo-category').value;
+      const priority = document.getElementById('memo-priority').value;
+      const body = document.getElementById('memo-body').value.trim() || 'Draft content...';
+
+      const now = new Date().toISOString().replace('T', ' ').substring(0, 16);
+      const newRef = `DRAFT-${String(store.memos.length + 1).padStart(3, '0')}`;
+
+      const draftMemo = {
+        id: state.editingDraftId || ('draft_' + Date.now()),
+        org_id: user.org_id,
+        ref_number: newRef,
+        title,
+        body: DOMPurify.sanitize(body),
+        author_id: user.id,
+        dept_id: user.dept_id,
+        category,
+        priority,
+        status: 'Draft',
+        current_step_index: 0,
+        attachments: state.uploadedFilesStaging.length > 0 ? state.uploadedFilesStaging : [],
+        versions: [{ version: 1, body, editor: user.name, timestamp: now }],
+        workflow: [],
+        timeline: [{ user: user.name, action: 'Draft Saved', timestamp: now, note: '' }],
+        discussions: [],
+        created_at: now,
+        last_activity: now
+      };
+
+      if (state.editingDraftId) {
+        store.memos = store.memos.map(m => m.id === state.editingDraftId ? draftMemo : m);
+      } else {
+        store.memos.unshift(draftMemo);
+      }
+      state.editingDraftId = null;
+
+      logAudit('MEMO_DRAFT', `Saved draft memo ${newRef}`);
+      saveStore(store);
+      showToast('Draft memo saved successfully', 'info');
+      navigate('drafts');
+    }
+
+    function editDraft(draftId) {
+      state.editingDraftId = draftId;
+      navigate('create-memo');
+    }
+
+    function deleteDraft(draftId) {
+      if (!confirm('Are you sure you want to delete this draft?')) return;
+      const store = getStore();
+      store.memos = store.memos.filter(m => m.id !== draftId);
+      logAudit('MEMO_DELETE', `Deleted draft memo`);
+      saveStore(store);
+      showToast('Draft deleted', 'info');
+      renderApp();
+    }
+
+    function handleWorkflowAction(action) {
+      const comment = document.getElementById('decision-comment').value.trim();
+      if ((action === 'Changes Requested' || action === 'Rejected') && !comment) {
+        showToast('A comment/reason is required for this action', 'error');
+        return;
+      }
+
+      const store = getStore();
+      const user = state.currentUser;
+      const memo = store.memos.find(m => m.id === state.activeMemoId);
+      const now = new Date().toISOString().replace('T', ' ').substring(0, 16);
+
+      const step = memo.workflow[memo.current_step_index];
+      step.status = action;
+      step.comment = comment;
+      step.timestamp = now;
+      step.acted_by = user.id;
+
+      const isDelegate = step.user_id !== user.id;
+      const actingNote = isDelegate ? ` (by delegate ${user.name})` : '';
+
+      memo.last_activity = now;
+
+      if (action === 'Approved') {
+        memo.timeline.push({ user: user.name + actingNote, action: 'Approved', timestamp: now, note: comment || 'Approved' });
+
+        if (memo.current_step_index + 1 < memo.workflow.length) {
+          memo.current_step_index += 1;
+          memo.workflow[memo.current_step_index].status = 'Pending';
+          const nextUserId = memo.workflow[memo.current_step_index].user_id;
+
+          store.notifications.unshift({
+            id: 'notif_' + Date.now(),
+            org_id: user.org_id,
+            recipient_id: nextUserId,
+            message: `Memo ${memo.ref_number} forwarded for your approval: "${memo.title}"`,
+            memo_id: memo.id,
+            read: false,
+            timestamp: now
+          });
+          showToast('Approved & forwarded to next reviewer', 'success');
+        } else {
+          memo.status = 'Approved';
+          memo.timeline.push({ user: 'System', action: 'Workflow Completed', timestamp: now, note: 'All approvals obtained' });
+
+          store.notifications.unshift({
+            id: 'notif_' + Date.now(),
+            org_id: user.org_id,
+            recipient_id: memo.author_id,
+            message: `Your memo ${memo.ref_number} has been FULLY APPROVED!`,
+            memo_id: memo.id,
+            read: false,
+            timestamp: now
+          });
+          showToast('Final approval granted! Memo completed.', 'success');
+        }
+      } else if (action === 'Changes Requested') {
+        memo.status = 'Changes Requested';
+        memo.timeline.push({ user: user.name + actingNote, action: 'Changes Requested', timestamp: now, note: comment });
+        store.notifications.unshift({
+          id: 'notif_' + Date.now(),
+          org_id: user.org_id,
+          recipient_id: memo.author_id,
+          message: `Changes requested on memo ${memo.ref_number}: "${comment}"`,
+          memo_id: memo.id,
+          read: false,
+          timestamp: now
+        });
+        showToast('Returned to author for changes', 'info');
+      } else if (action === 'Rejected') {
+        memo.status = 'Rejected';
+        memo.timeline.push({ user: user.name + actingNote, action: 'Rejected', timestamp: now, note: comment });
+        store.notifications.unshift({
+          id: 'notif_' + Date.now(),
+          org_id: user.org_id,
+          recipient_id: memo.author_id,
+          message: `Your memo ${memo.ref_number} was rejected: "${comment}"`,
+          memo_id: memo.id,
+          read: false,
+          timestamp: now
+        });
+        showToast('Memo rejected & workflow terminated', 'error');
+      }
+
+      logAudit('WORKFLOW_ACTION', `${user.name} performed ${action} on ${memo.ref_number}`);
+      saveStore(store);
+      renderApp();
+    }
+
+    function handleResubmitMemo() {
+      const newBody = document.getElementById('resubmit-memo-body').value.trim();
+      if (!newBody) return showToast('Memo body cannot be empty', 'error');
+
+      const store = getStore();
+      const user = state.currentUser;
+      const memo = store.memos.find(m => m.id === state.activeMemoId);
+      const now = new Date().toISOString().replace('T', ' ').substring(0, 16);
+
+      memo.body = DOMPurify.sanitize(newBody);
+      memo.status = 'Pending Approval';
+      memo.last_activity = now;
+      
+      if (!memo.versions) memo.versions = [];
+      memo.versions.push({
+        version: memo.versions.length + 1,
+        body: memo.body,
+        editor: user.name,
+        timestamp: now
+      });
+
+      memo.timeline.push({
+        user: user.name,
+        action: `Resubmitted (Version ${memo.versions.length}.0)`,
+        timestamp: now,
+        note: 'Author revised content and resumed workflow'
+      });
+
+      const currentReviewerId = memo.workflow[memo.current_step_index].user_id;
+      store.notifications.unshift({
+        id: 'notif_' + Date.now(),
+        org_id: user.org_id,
+        recipient_id: currentReviewerId,
+        message: `Memo ${memo.ref_number} was updated and resubmitted for your review.`,
+        memo_id: memo.id,
+        read: false,
+        timestamp: now
+      });
+
+      logAudit('MEMO_RESUBMIT', `Resubmitted revised version for ${memo.ref_number}`);
+      saveStore(store);
+      showToast('Memo resubmitted into workflow', 'success');
+      renderApp();
+    }
+
+    function postGeneralDiscussionComment() {
+      const input = document.getElementById('general-comment-input');
+      const text = input.value.trim();
+      if (!text) return;
+
+      const store = getStore();
+      const user = state.currentUser;
+      const memo = store.memos.find(m => m.id === state.activeMemoId);
+      const now = new Date().toISOString().replace('T', ' ').substring(0, 16);
+
+      if (!memo.discussions) memo.discussions = [];
+      memo.discussions.push({
+        id: 'disc_' + Date.now(),
+        author_name: user.name,
+        message: text,
+        timestamp: now
+      });
+
+      saveStore(store);
+      input.value = '';
+      showToast('Comment posted', 'success');
+      renderApp();
+    }
+
+    function handleCreateDelegation(e) {
+      e.preventDefault();
+      const store = getStore();
+      const user = state.currentUser;
+
+      const delegateeId = document.getElementById('del-delegatee').value;
+      const reason = document.getElementById('del-reason').value.trim();
+      const start = document.getElementById('del-start').value;
+      const end = document.getElementById('del-end').value;
+
+      store.delegations.unshift({
+        id: 'del_' + Date.now(),
+        org_id: user.org_id,
+        delegator_id: user.id,
+        delegatee_id: delegateeId,
+        start_date: start,
+        end_date: end,
+        reason,
+        status: 'Active'
+      });
+
+      logAudit('DELEGATION_CREATE', `Delegated review authority to ${store.users.find(u => u.id === delegateeId)?.name}`);
+      saveStore(store);
+      showToast('Delegation authorized successfully', 'success');
+      renderApp();
+    }
+
+    function exportMemoPDF(refNumber) {
+      const element = document.getElementById('printable-memo-area');
+      showToast('Generating official PDF...', 'info');
+
+      const opt = {
+        margin: 10,
+        filename: `${refNumber}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2 },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      };
+
+      html2pdf().set(opt).from(element).save().then(() => {
+        showToast('PDF exported successfully!', 'success');
+      });
+    }
+
+    /* ==========================================================================
+       6. GLOBAL UTILITY & EVENT HELPERS
+       ========================================================================== */
+    function loginAs(userId) {
+      const store = getStore();
+      const user = store.users.find(u => u.id === userId);
+      if (user) {
+        if (user.status !== 'Active') return showToast('Account is inactive. Cannot sign in.', 'error');
+        setCurrentUser(user);
+        logAudit('USER_LOGIN', `User ${user.name} logged in`);
+        showToast(`Authenticated as ${user.name} (${user.role.toUpperCase()})`, 'success');
+      }
+    }
+
+    function logout() {
+      logAudit('USER_LOGOUT', `User logged out`);
+      setCurrentUser(null);
+      showToast('Logged out successfully');
+    }
+
+    function switchAdminTab(tab) {
+      state.adminTab = tab;
+      renderApp();
+    }
+
+    function promptCreateCategoryModal() {
+      try { enforceServerPermission('admin'); } catch(e) { return; }
+      const name = prompt('Enter Category Name:');
+      if (!name) return;
+      const desc = prompt('Enter Description:');
+      const store = getStore();
+
+      store.categories.push({
+        id: 'cat_' + Date.now(),
+        org_id: state.currentUser.org_id,
+        name,
+        description: desc || '',
+        status: 'Active'
+      });
+
+      saveStore(store);
+      showToast(`Category "${name}" created`, 'success');
+      renderApp();
+    }
+
+    function toggleCategoryStatus(catId) {
+      try { enforceServerPermission('admin'); } catch(e) { return; }
+      const store = getStore();
+      const cat = store.categories.find(c => c.id === catId);
+      if (cat) {
+        cat.status = cat.status === 'Active' ? 'Inactive' : 'Active';
+        saveStore(store);
+        showToast(`Category marked as ${cat.status}`, 'info');
+        renderApp();
+      }
+    }
+
+    function promptCreateDeptModal() {
+      try { enforceServerPermission('admin'); } catch(e) { return; }
+      const name = prompt('Enter Department Name:');
+      if (!name) return;
+      const desc = prompt('Enter Description:');
+      const store = getStore();
+      store.departments.push({
+        id: 'dept_' + Date.now(),
+        org_id: state.currentUser.org_id,
+        name,
+        description: desc || '',
+        status: 'Active'
+      });
+      saveStore(store);
+      showToast(`Created department "${name}"`, 'success');
+      renderApp();
+    }
+
+    function promptEditDeptModal(deptId) {
+      try { enforceServerPermission('admin'); } catch(e) { return; }
+      const store = getStore();
+      const dept = store.departments.find(d => d.id === deptId);
+      if (!dept) return;
+
+      const newName = prompt('Update Department Name:', dept.name);
+      if (!newName) return;
+      const newDesc = prompt('Update Description:', dept.description);
+
+      dept.name = newName;
+      dept.description = newDesc || '';
+      saveStore(store);
+      showToast('Department updated', 'success');
+      renderApp();
+    }
+
+    function toggleDeptStatus(deptId) {
+      try { enforceServerPermission('admin'); } catch(e) { return; }
+      const store = getStore();
+      const dept = store.departments.find(d => d.id === deptId);
+      if (dept) {
+        dept.status = dept.status === 'Active' ? 'Inactive' : 'Active';
+        saveStore(store);
+        showToast(`Department status: ${dept.status}`, 'info');
+        renderApp();
+      }
+    }
+
+    function toggleUserStatus(userId) {
+      try { enforceServerPermission('admin'); } catch(e) { return; }
+      const store = getStore();
+      const u = store.users.find(user => user.id === userId);
+      if (u) {
+        u.status = u.status === 'Active' ? 'Inactive' : 'Active';
+        saveStore(store);
+        showToast(`User status: ${u.status}`, 'info');
+        renderApp();
+      }
+    }
+
+    function promptCreateWorkflowTemplate() {
+      try { enforceServerPermission('admin'); } catch(e) { return; }
+      const store = getStore();
+      const name = prompt('Enter Workflow Template Name:');
+      if (!name) return;
+      const desc = prompt('Enter Template Description:');
+      
+      const orgUsers = store.users.filter(u => u.org_id === state.currentUser.org_id && u.status === 'Active');
+      if (orgUsers.length < 2) return showToast('At least 2 active users required for template', 'error');
+
+      const stepUserIds = [orgUsers[0].id, orgUsers[1].id];
+      if (orgUsers.length >= 3) stepUserIds.push(orgUsers[2].id);
+
+      store.workflowTemplates.push({
+        id: 'tmpl_' + Date.now(),
+        org_id: state.currentUser.org_id,
+        name,
+        description: desc || 'Custom sequential template',
+        stepUserIds
+      });
+
+      saveStore(store);
+      showToast(`Template "${name}" created`, 'success');
+      renderApp();
+    }
+
+    function deleteWorkflowTemplate(tmplId) {
+      try { enforceServerPermission('admin'); } catch(e) { return; }
+      const store = getStore();
+      store.workflowTemplates = store.workflowTemplates.filter(t => t.id !== tmplId);
+      saveStore(store);
+      showToast('Template deleted', 'info');
+      renderApp();
+    }
+
+    function applyWorkflowTemplateToForm(tmplId) {
+      if (!tmplId) return;
+      const store = getStore();
+      const tmpl = store.workflowTemplates.find(t => t.id === tmplId);
+      if (!tmpl) return;
+
+      const container = document.getElementById('workflow-step-container');
+      container.innerHTML = '';
+
+      const orgUsers = store.users.filter(u => u.org_id === state.currentUser.org_id && u.id !== state.currentUser.id && u.status === 'Active');
+
+      tmpl.stepUserIds.forEach((uid, idx) => {
+        const row = document.createElement('div');
+        row.className = 'workflow-step-row flex items-center gap-2 p-3 bg-slate-50 rounded-xl border border-slate-200';
+        row.innerHTML = `
+          <span class="step-badge text-xs font-bold font-mono bg-brand-600 text-white w-6 h-6 rounded-full flex items-center justify-center shrink-0">${idx + 1}</span>
+          <select class="step-user-select w-full text-xs px-3 py-2 border border-slate-200 rounded-xl outline-none bg-white">
+            ${orgUsers.map(u => `<option value="${u.id}" ${u.id === uid ? 'selected' : ''}>${u.name} (${u.designation})</option>`).join('')}
+          </select>
+          <button type="button" onclick="removeWorkflowStepRow(this)" class="p-1 text-slate-400 hover:text-rose-600">
+            <i data-lucide="trash-2" class="w-4 h-4"></i>
+          </button>
+        `;
+        container.appendChild(row);
+      });
+      lucide.createIcons();
+      showToast(`Loaded template: "${tmpl.name}"`, 'info');
+    }
+
+    function addWorkflowStepRow() {
+      const store = getStore();
+      const orgUsers = store.users.filter(u => u.org_id === state.currentUser.org_id && u.id !== state.currentUser.id && u.status === 'Active');
+      const container = document.getElementById('workflow-step-container');
+      const stepNumber = container.children.length + 1;
+
+      const row = document.createElement('div');
+      row.className = 'workflow-step-row flex items-center gap-2 p-3 bg-slate-50 rounded-xl border border-slate-200';
+      row.innerHTML = `
+        <span class="step-badge text-xs font-bold font-mono bg-brand-600 text-white w-6 h-6 rounded-full flex items-center justify-center shrink-0">${stepNumber}</span>
+        <select class="step-user-select w-full text-xs px-3 py-2 border border-slate-200 rounded-xl outline-none bg-white">
+          ${orgUsers.map(u => `<option value="${u.id}">${u.name} (${u.designation})</option>`).join('')}
+        </select>
+        <button type="button" onclick="removeWorkflowStepRow(this)" class="p-1 text-slate-400 hover:text-rose-600">
+          <i data-lucide="trash-2" class="w-4 h-4"></i>
+        </button>
+      `;
+      container.appendChild(row);
+      lucide.createIcons();
+    }
+
+    function removeWorkflowStepRow(btn) {
+      const container = document.getElementById('workflow-step-container');
+      if (container.children.length > 1) {
+        btn.closest('.workflow-step-row').remove();
+        Array.from(container.children).forEach((el, idx) => {
+          el.querySelector('.step-badge').innerText = idx + 1;
+        });
+      } else {
+        showToast('At least one workflow participant is required', 'error');
+      }
+    }
+
+    function openNotification(notifId, memoId) {
+      const store = getStore();
+      const notif = store.notifications.find(n => n.id === notifId);
+      if (notif) notif.read = true;
+      saveStore(store);
+      navigate('memo-details', { memoId });
+    }
+
+    function markAllNotificationsRead() {
+      const store = getStore();
+      store.notifications.forEach(n => {
+        if (n.recipient_id === state.currentUser.id) n.read = true;
+      });
+      saveStore(store);
+      showToast('All notifications marked read', 'info');
+      renderApp();
+    }
+
+    /* Filter Handlers */
+    function updateSearch(val) { state.searchQuery = val; renderApp(); }
+    function updateFilterStatus(val) { state.filterStatus = val; renderApp(); }
+    function updateFilterPriority(val) { state.filterPriority = val; renderApp(); }
+    function updateFilterCategory(val) { state.filterCategory = val; renderApp(); }
+    function updateFilterDept(val) { state.filterDept = val; renderApp(); }
+    function updateFilterStartDate(val) { state.filterStartDate = val; renderApp(); }
+    function updateFilterEndDate(val) { state.filterEndDate = val; renderApp(); }
+
+    function resetFilters() {
+      state.searchQuery = '';
+      state.filterStatus = 'All';
+      state.filterPriority = 'All';
+      state.filterCategory = 'All';
+      state.filterDept = 'All';
+      state.filterStartDate = '';
+      state.filterEndDate = '';
+      renderApp();
+    }
+
+    function getStatusBadge(status) {
+      const badges = {
+        'Draft': 'bg-slate-100 text-slate-700',
+        'Submitted': 'bg-blue-100 text-blue-800',
+        'Pending Review': 'bg-indigo-100 text-indigo-800',
+        'Pending Approval': 'bg-amber-100 text-amber-800',
+        'Changes Requested': 'bg-orange-100 text-orange-800',
+        'Approved': 'bg-emerald-100 text-emerald-800',
+        'Rejected': 'bg-rose-100 text-rose-800',
+        'Cancelled': 'bg-slate-200 text-slate-700'
+      };
+      return `<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold ${badges[status] || 'bg-slate-100 text-slate-700'}">${status}</span>`;
+    }
+
+    function getPriorityBadge(priority) {
+      const badges = {
+        'Normal': 'bg-slate-100 text-slate-600',
+        'High': 'bg-amber-100 text-amber-700 font-semibold',
+        'Urgent': 'bg-rose-100 text-rose-700 font-bold'
+      };
+      return `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] ${badges[priority] || 'bg-slate-100'}">${priority}</span>`;
+    }
+
+    renderApp();
+  </script>
+</body>
+</html>
